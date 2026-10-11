@@ -1,11 +1,11 @@
+
 require("dotenv").config();
 
 const express = require("express");
-
 const cors = require("cors");
+const mongoose = require("mongoose");
 
 const llmRoutes = require("./routes/llmRoutes");
-
 const companyRoutes = require("./routes/companyRoutes");
 
 const app = express();
@@ -20,9 +20,21 @@ app.get("/", (req, res) => {
 });
 
 app.use("/companies", companyRoutes);
-
 app.use("/llm", llmRoutes);
 
-app.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
-});
+const startServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+
+    console.log("MongoDB connected successfully");
+
+    app.listen(5000, () => {
+      console.log("Server running on http://localhost:5000");
+    });
+  } catch (error) {
+    console.error("MongoDB connection failed:", error.message);
+    process.exit(1);
+  }
+};
+
+startServer();
