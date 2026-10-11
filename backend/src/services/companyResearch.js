@@ -5,7 +5,7 @@ const client = tavily({
 });
 
 const researchCompany = async (company) => {
-    if (company.research) {
+  if (company.research) {
     return {
       industry: company.industry,
       research: company.research,
@@ -17,98 +17,77 @@ const researchCompany = async (company) => {
       recommendedAsk: company.recommendedAsk
     };
   }
+
   const name = company.name;
 
-  const queries = [
-    `${name} sponsorship events partnerships`,
-    `${name} student education university hackathon sponsorship`,
-    `${name} products cloud AI software technology developer`,
-    `${name} community grants corporate sponsorship`
-  ];
+  try {
+    console.time("Tavily Research");
 
-  let allResults = [];
-
-  for (const query of queries) {
-    try {
-      const response = await client.search(query, {
-        searchDepth: "advanced",
-        maxResults: 5,
+    const response = await client.search(
+      `${name} sponsorship education hackathon partnerships technology`,
+      {
+        searchDepth: "basic",
+        maxResults: 3,
         includeAnswer: true
-      });
-
-      if (response.results) {
-        allResults.push(...response.results);
       }
-    } catch (error) {
-      console.error(`Tavily search failed for: ${query}`);
-    }
-  }
-
-  const seen = new Set();
-
-  const uniqueResults = allResults.filter((result) => {
-    const key = result.url
-      ? result.url.split("?")[0].replace(/\/$/, "").toLowerCase()
-      : result.title?.toLowerCase();
-
-    if (!key || seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
-
-  const relevantResults = uniqueResults.filter((result) => {
-    const text = `${result.title || ""} ${result.content || ""}`.toLowerCase();
-
-    return (
-      text.includes(name.toLowerCase()) ||
-      text.includes("sponsor") ||
-      text.includes("sponsorship") ||
-      text.includes("partnership") ||
-      text.includes("education") ||
-      text.includes("student") ||
-      text.includes("university") ||
-      text.includes("hackathon") ||
-      text.includes("community") ||
-      text.includes("developer") ||
-      text.includes("cloud") ||
-      text.includes("artificial intelligence") ||
-      text.includes("software") ||
-      text.includes("technology")
     );
-  });
 
-  const selectedResults = relevantResults.slice(0, 10);
+    console.timeEnd("Tavily Research");
 
-  const researchText = selectedResults
-    .map((result, index) => {
-      return `
+    const results = response.results || [];
+
+    const seen = new Set();
+
+    const uniqueResults = results.filter((result) => {
+      const key = result.url
+        ? result.url.split("?")[0].replace(/\/$/, "").toLowerCase()
+        : result.title?.toLowerCase();
+
+      if (!key || seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+
+    const selectedResults = uniqueResults.slice(0, 2);
+
+    const researchText = selectedResults
+      .map((result, index) => {
+        return `
 Source ${index + 1}
+
 Title: ${result.title || ""}
+
 URL: ${result.url || ""}
-Content: ${(result.content || "").slice(0, 1500)}
+
+Content: ${(result.content || "").slice(0, 500)}
 `;
-    })
-    .join("\n");
+      })
+      .join("\n");
 
-  const sources = selectedResults.map((result) => ({
-    title: result.title || "",
-    url: result.url || "",
-    evidence: (result.content || "").slice(0, 500)
-  }));
+    const sources = selectedResults.map((result) => ({
+      title: result.title || "",
+      url: result.url || "",
+      evidence: (result.content || "").slice(0, 200)
+    }));
 
-  return {
-    industry: "",
-    research: researchText,
-    sources,
-    researchedAt: new Date().toISOString(),
-    score: 0,
-    category: "",
-    recommendedTier: "",
-    recommendedAsk: ""
-  };
+    return {
+      industry: "",
+      research: researchText,
+      sources,
+      researchedAt: new Date().toISOString(),
+      score: 0,
+      category: "",
+      recommendedTier: "",
+      recommendedAsk: ""
+    };
+
+  } catch (error) {
+    console.error("Company research failed:", error.message);
+    throw new Error("Company research failed");
+  }
 };
 
 module.exports = {

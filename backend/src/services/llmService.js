@@ -1,7 +1,7 @@
-const OpenAI = require("openai");
+const { GoogleGenAI } = require("@google/genai");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+const client = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
 });
 
 const generateSponsorStrategy = async (company) => {
@@ -14,7 +14,7 @@ Company: ${company.name}
 Website: ${company.website}
 
 Research:
-${company.research}
+${(company.research || "").slice(0, 500)}
 
 Return ONLY valid JSON:
 
@@ -35,86 +35,62 @@ Return ONLY valid JSON:
 }
 
 Scoring:
+- eventFit: maximum 25
+- sponsorshipEvidence: maximum 20
+- educationCommunityFit: maximum 15
+- productRelevance: maximum 15
+- audienceFit: maximum 15
+- sponsorshipPotential: maximum 10
 
-eventFit:
-How relevant is the company to a technology/student event?
-Maximum 25.
-
-sponsorshipEvidence:
-Evidence that the company sponsors events, communities, education,
-hackathons or partnerships.
-Maximum 20.
-
-educationCommunityFit:
-Involvement with students, universities, education or developer communities.
-Maximum 15.
-
-productRelevance:
-How relevant are the company's products/services to the event?
-Maximum 15.
-
-audienceFit:
-How well does the event audience match the company's target audience?
-Maximum 15.
-
-sponsorshipPotential:
-Evidence of ability or willingness to support sponsorships.
-Maximum 10.
-
-Important:
-- Return only the individual factor scores.
-- Do NOT calculate the final score.
-- Do not exceed the maximum for each factor.
+Rules:
+- Return individual factor scores only.
+- Do not calculate the final score.
+- Do not exceed the maximum for any factor.
 - Do not invent facts.
 - Score conservatively when evidence is weak.
 
 category must be exactly one of:
+"Technology", "Cloud & Developer Tools", "AI & Data",
+"Finance", "Education", "Food & Beverage", "E-commerce",
+"Healthcare", "Automotive", "Telecom", "Consumer Electronics",
+"Media & Entertainment", "Other"
 
-"Technology"
-"Cloud & Developer Tools"
-"AI & Data"
-"Finance"
-"Education"
-"Food & Beverage"
-"E-commerce"
-"Healthcare"
-"Automotive"
-"Telecom"
-"Consumer Electronics"
-"Media & Entertainment"
-"Other"
+recommendedAsk must be exactly one of:
+"money", "goodies", "infra"
 
-recommendedAsk MUST be exactly ONE of these values:
+Return only the specified JSON fields.
+All six scores must be numbers.
+Do not add explanations or extra fields.
 
-"money"
-"goodies"
-"infra"
-
-Do not write a sentence.
-Do not add explanations.
-Do not add multiple values.
-Do not return anything except one of the three exact values.
-
-Examples:
-"money"
-"goodies"
-"infra"
-
-Before returning the JSON, verify:
-- category is exactly one allowed category
-- recommendedAsk is exactly "money", "goodies", or "infra"
-- all six scores are numbers
-- no score exceeds its maximum
-- no extra fields are included
-
+Keep whyGoodSponsor, strategy, whatToAsk, and shortPitch
+to one short sentence each.
+Return the complete JSON object.
 `;
 
-  const response = await client.responses.create({
-    model: "gpt-6-luna",
-    input: prompt
+  console.log("Starting Gemini...");
+  console.time("Gemini");
+
+  const response = await client.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.2,
+      maxOutputTokens: 2100
+    }
   });
 
-  const text = response.output_text;
+  console.timeEnd("Gemini");
+  console.log("Gemini response received");
+
+  let text = response.text || "";
+
+  console.log("Finish reason:", response.candidates?.[0]?.finishReason);
+  console.log("Response length:", text.length);
+
+  text = text.replace(/^```json\s*/, "");
+  text = text.replace(/^```\s*/, "");
+  text = text.replace(/\s*```$/, "");
 
   try {
     return JSON.parse(text);
