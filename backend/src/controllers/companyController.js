@@ -1,30 +1,106 @@
-let companies = [];
 
+const Company = require("../models/company");
 const { analyzeCompany } = require("../services/sponsorIntelligence");
+
+const getScoreBreakdown = (company) => ({
+  eventFit: company.eventFit,
+  sponsorshipEvidence: company.sponsorshipEvidence,
+  educationCommunityFit: company.educationCommunityFit,
+  productRelevance: company.productRelevance,
+  audienceFit: company.audienceFit,
+  sponsorshipPotential: company.sponsorshipPotential
+});
+
+const formatRankedCompany = (company, index) => ({
+  rank: index + 1,
+  id: company.id,
+  company: company.name,
+  website: company.website,
+  industry: company.industry,
+  category: company.category,
+  score: company.score,
+  recommendedTier: company.recommendedTier,
+  recommendedAsk: company.recommendedAsk,
+  scoreBreakdown: getScoreBreakdown(company),
+  whyGoodSponsor: company.whyGoodSponsor,
+  strategy: company.strategy,
+  whatToAsk: company.whatToAsk,
+  shortPitch: company.shortPitch
+});
 
 const research = async (req, res) => {
   try {
-    console.log("BODY:", req.body);
-    console.log("COMPANIES:", companies);
+    const companyId = String(req.body?.companyId || "");
 
-    const companyId = String(req.body?.companyId);
+    if (!companyId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid company ID" });
+    }
 
-    const company = companies.find(
-      (company) => String(company.id) === companyId
-    );
+    const company = await Company.findById(companyId);
 
     if (!company) {
-      return res.status(404).json({
-        message: "Company not found",
-        receivedId: companyId
-      });
+      return res.status(404).json({ message: "Company not found" });
     }
 
     const result = await analyzeCompany(company);
 
-    res.json({
-      ...result,
+    const fields = [
+      "industry",
+      "category",
+      "research",
+      "sources",
+      "researchedAt",
+      "eventFit",
+      "sponsorshipEvidence",
+      "educationCommunityFit",
+      "productRelevance",
+      "audienceFit",
+      "sponsorshipPotential",
+      "recommendedAsk",
+      "whyGoodSponsor",
+      "strategy",
+      "whatToAsk",
+      "shortPitch"
+    ];
 
+    for (const field of fields) {
+      if (result[field] !== undefined) {
+        company.set(field, result[field]);
+      }
+    }
+
+    const score =
+      Number(company.eventFit || 0) +
+      Number(company.sponsorshipEvidence || 0) +
+      Number(company.educationCommunityFit || 0) +
+      Number(company.productRelevance || 0) +
+      Number(company.audienceFit || 0) +
+      Number(company.sponsorshipPotential || 0);
+
+    company.score = Math.min(score, 100);
+
+    company.recommendedTier =
+      company.score >= 90 ? "Platinum" :
+      company.score >= 75 ? "Gold" :
+      company.score >= 60 ? "Silver" : "Bronze";
+console.log("SCORES BEFORE SAVE:", {
+  eventFit: company.eventFit,
+  sponsorshipEvidence: company.sponsorshipEvidence,
+  educationCommunityFit: company.educationCommunityFit,
+  productRelevance: company.productRelevance,
+  audienceFit: company.audienceFit,
+  sponsorshipPotential: company.sponsorshipPotential
+});
+
+console.log("CALCULATED SCORE:", company.score);
+
+await company.save();
+
+console.log("SCORE AFTER SAVE:", company.score);
+    await company.save();
+
+    res.json({
+      ...company.toObject(),
       scoreBreakdown: {
         eventFit: company.eventFit,
         sponsorshipEvidence: company.sponsorshipEvidence,
@@ -34,7 +110,6 @@ const research = async (req, res) => {
         sponsorshipPotential: company.sponsorshipPotential
       }
     });
-
   } catch (error) {
     console.error("Company research error:", error);
 
@@ -45,205 +120,272 @@ const research = async (req, res) => {
   }
 };
 
-const addCompany = (req, res) => {
-  const { name, website } = req.body || {};
+const addCompany = async (req, res) => {
+  try {
+    const { name, website } = req.body || {};
 
-  if (!name) {
-    return res.status(400).json({
-      message: "Company name is required"
-    });
-  }
-
-  const company = {
-  id: String(companies.length + 1),
-  name,
-  website: website || "",
-
-  industry: "",
-  category: "",
-  research: "",
-  sources: [],
-  researchedAt: null,
-
-  score: 0,
-
-  eventFit: 0,
-  sponsorshipEvidence: 0,
-  educationCommunityFit: 0,
-  productRelevance: 0,
-  audienceFit: 0,
-  sponsorshipPotential: 0,
-
-  recommendedTier: "",
-  recommendedAsk: "",
-
-  whyGoodSponsor: "",
-  strategy: "",
-  whatToAsk: "",
-  shortPitch: ""
-};
-
-  companies.push(company);
-
-  res.status(201).json(company);
-};
-
-const getCompanies = (req, res) => {
-  const { category, minScore } = req.query;
-
-  let result = [...companies];
-
-  if (category) {
-    result = result.filter(
-      (company) =>
-        company.category.toLowerCase() === category.toLowerCase()
-    );
-  }
-
-  if (minScore) {
-    const score = Number(minScore);
-
-    if (isNaN(score)) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({
-        message: "minScore must be a number"
+        message: "Company name is required"
       });
     }
 
-    result = result.filter(
-      (company) => company.score >= score
-    );
-  }
+    const company = await Company.create({
+      name: String(name).trim(),
+      website: website || ""
+    });
 
-  res.json(result);
-};
+    res.status(201).json(company);
+  } catch (error) {
+    console.error("Add company error:", error);
 
-const rankCompanies = (req, res) => {
-  const rankedCompanies = [...companies]
-    .filter((company) => company.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((company, index) => ({
-      rank: index + 1,
-      id: company.id,
-      company: company.name,
-      website: company.website,
-      industry: company.industry,
-      category: company.category,
-      score: company.score,
-      recommendedTier: company.recommendedTier,
-      recommendedAsk: company.recommendedAsk,
-
-      scoreBreakdown: {
-        eventFit: company.eventFit,
-        sponsorshipEvidence: company.sponsorshipEvidence,
-        educationCommunityFit: company.educationCommunityFit,
-        productRelevance: company.productRelevance,
-        audienceFit: company.audienceFit,
-        sponsorshipPotential: company.sponsorshipPotential
-      },
-
-      whyGoodSponsor: company.whyGoodSponsor,
-      strategy: company.strategy,
-      whatToAsk: company.whatToAsk,
-      shortPitch: company.shortPitch
-    }));
-
-  res.json(rankedCompanies);
-};
-
-const getTopCompanies = (req, res) => {
-  const limit = Number(req.params.limit);
-
-  if (!limit || limit < 1) {
-    return res.status(400).json({
-      message: "Limit must be a positive number"
+    res.status(500).json({
+      message: "Failed to add company",
+      error: error.message
     });
   }
-
-  const topCompanies = [...companies]
-    .filter((company) => company.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((company, index) => ({
-      rank: index + 1,
-      id: company.id,
-      company: company.name,
-      website: company.website,
-      industry: company.industry,
-      category: company.category,
-      score: company.score,
-      recommendedTier: company.recommendedTier,
-      recommendedAsk: company.recommendedAsk,
-
-      scoreBreakdown: {
-        eventFit: company.eventFit,
-        sponsorshipEvidence: company.sponsorshipEvidence,
-        educationCommunityFit: company.educationCommunityFit,
-        productRelevance: company.productRelevance,
-        audienceFit: company.audienceFit,
-        sponsorshipPotential: company.sponsorshipPotential
-      },
-
-      whyGoodSponsor: company.whyGoodSponsor,
-      strategy: company.strategy,
-      whatToAsk: company.whatToAsk,
-      shortPitch: company.shortPitch
-    }));
-
-  res.json(topCompanies);
 };
 
-const recommendCompanies = (req, res) => {
-  const recommendedCompanies = [...companies]
-    .filter((company) => company.score >= 60)
-    .sort((a, b) => b.score - a.score)
-    .map((company, index) => ({
-      rank: index + 1,
-      id: company.id,
-      company: company.name,
-      industry: company.industry,
-      category: company.category,
-      score: company.score,
-      recommendedTier: company.recommendedTier,
-      recommendedAsk: company.recommendedAsk,
+const getCompanies = async (req, res) => {
+  try {
+    const { category, minScore } = req.query;
+    const filter = {};
 
-      scoreBreakdown: {
-        eventFit: company.eventFit,
-        sponsorshipEvidence: company.sponsorshipEvidence,
-        educationCommunityFit: company.educationCommunityFit,
-        productRelevance: company.productRelevance,
-        audienceFit: company.audienceFit,
-        sponsorshipPotential: company.sponsorshipPotential
+    if (category) {
+      filter.category = {
+        $regex: `^${String(category)}$`,
+        $options: "i"
+      };
+    }
+
+    if (minScore !== undefined && minScore !== "") {
+      const score = Number(minScore);
+
+      if (!Number.isFinite(score)) {
+        return res.status(400).json({
+          message: "minScore must be a number"
+        });
       }
-    }));
 
-  res.json(recommendedCompanies);
-};
+      filter.score = { $gte: score };
+    }
 
-const getCompanyById = (id) => {
-  return companies.find(
-    (company) => String(company.id) === String(id)
-  );
-};
+    const companies = await Company.find(filter).sort({ createdAt: -1 });
 
-const getCompany = (req, res) => {
-  const company = getCompanyById(req.params.id);
+    res.json(companies);
+  } catch (error) {
+    console.error("Get companies error:", error);
 
-  if (!company) {
-    return res.status(404).json({
-      message: "Company not found"
+    res.status(500).json({
+      message: "Failed to get companies",
+      error: error.message
     });
   }
+};
 
-  res.json(company);
+const rankCompanies = async (req, res) => {
+  try {
+    const companies = await Company.find({
+      score: { $gt: 0 }
+    }).sort({ score: -1, _id: 1 });
+
+    res.json(companies.map(formatRankedCompany));
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to rank companies",
+      error: error.message
+    });
+  }
+};
+
+const getTopCompanies = async (req, res) => {
+  try {
+    const limit = Number(req.params.limit);
+
+    if (!Number.isInteger(limit) || limit < 1) {
+      return res.status(400).json({
+        message: "Limit must be a positive integer"
+      });
+    }
+
+    const companies = await Company.find({
+      score: { $gt: 0 }
+    })
+      .sort({ score: -1, _id: 1 })
+      .limit(limit);
+
+    res.json(companies.map(formatRankedCompany));
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to get top companies",
+      error: error.message
+    });
+  }
+};
+
+const recommendCompanies = async (req, res) => {
+  try {
+    const companies = await Company.find({
+      score: { $gte: 60 }
+    }).sort({ score: -1, _id: 1 });
+
+    res.json(companies.map((company, index) => {
+      const result = formatRankedCompany(company, index);
+
+      return {
+        rank: result.rank,
+        id: result.id,
+        company: result.company,
+        industry: result.industry,
+        category: result.category,
+        score: result.score,
+        recommendedTier: result.recommendedTier,
+        recommendedAsk: result.recommendedAsk,
+        scoreBreakdown: result.scoreBreakdown
+      };
+    }));
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to recommend companies",
+      error: error.message
+    });
+  }
+};
+
+const getCompanyById = async (id) => {
+  if (!id || !String(id).match(/^[0-9a-fA-F]{24}$/)) {
+    return null;
+  }
+
+  return Company.findById(id);
+};
+
+const getCompany = async (req, res) => {
+  try {
+    const company = await getCompanyById(req.params.id);
+
+    if (!company) {
+      return res.status(404).json({
+        message: "Company not found"
+      });
+    }
+
+    res.json(company);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to get company",
+      error: error.message
+    });
+  }
+};
+
+const updateCompany = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({
+        message: "Invalid company ID"
+      });
+    }
+
+    const allowedFields = ["name", "website"];
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        message: "Provide name or website to update"
+      });
+    }
+
+    if (
+      updates.name !== undefined &&
+      (typeof updates.name !== "string" || !updates.name.trim())
+    ) {
+      return res.status(400).json({
+        message: "Name must be a non-empty string"
+      });
+    }
+
+    if (updates.name !== undefined) {
+      updates.name = updates.name.trim();
+    }
+
+    if (
+      updates.website !== undefined &&
+      typeof updates.website !== "string"
+    ) {
+      return res.status(400).json({
+        message: "Website must be a string"
+      });
+    }
+
+    const company = await Company.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!company) {
+      return res.status(404).json({
+        message: "Company not found"
+      });
+    }
+
+    res.json({
+      message: "Company updated successfully",
+      company
+    });
+  } catch (error) {
+    console.error("Update company error:", error.message);
+
+    res.status(500).json({
+      message: "Failed to update company"
+    });
+  }
+};
+
+const deleteCompany = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid company ID" });
+    }
+
+    const company = await Company.findByIdAndDelete(id);
+
+    if (!company) {
+      return res.status(404).json({ message: "Company not found" });
+    }
+
+    res.json({
+      message: "Company deleted successfully",
+      company
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to delete company",
+      error: error.message
+    });
+  }
 };
 
 module.exports = {
   addCompany,
   getCompanies,
+  getCompany,
   research,
   rankCompanies,
   getTopCompanies,
   recommendCompanies,
   getCompanyById,
-  getCompany
+  updateCompany,
+  deleteCompany
 };
