@@ -1,0 +1,197 @@
+{
+  "info": {
+    "_postman_id": "sponsybot-person3-collection",
+    "name": "SponsyBot - Person 3 Outreach CRM",
+    "description": "Postman testing suite for Person 3: Outreach CRM, Follow-up limits, and Pipeline tracking.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "outreachId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Get Pipeline Stats (Dashboard Metrics)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/outreach/stats",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "stats"]
+        },
+        "description": "Calculates total outreach, counts by status, response rate %, and pending follow-ups count."
+      }
+    },
+    {
+      "name": "2. Get Overdue Follow-ups Due Now",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/outreach/pending-followups",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "pending-followups"]
+        },
+        "description": "Returns all sponsors whose next follow-up date is <= now and follow-up count < 2."
+      }
+    },
+    {
+      "name": "3. Get All Outreach Records (CRM Tracker)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/outreach",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach"]
+        },
+        "description": "Lists all outreach records with populated company and team member details."
+      }
+    },
+    {
+      "name": "4. Trigger Follow-Up (Enforces Max 2 Rule)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"notes\": \"Triggering follow-up touchpoint via organizer\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/outreach/{{outreachId}}/followup",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "{{outreachId}}", "followup"]
+        },
+        "description": "Follow-up 1 and 2 succeed. If follow-up count is already 2, this returns HTTP 400 Bad Request and auto-closes the outreach."
+      }
+    },
+    {
+      "name": "5. Test Duplicate Outreach Prevention",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"companyId\": \"PASTE_COMPANY_ID_HERE\",\n  \"memberId\": \"PASTE_MEMBER_ID_HERE\",\n  \"notes\": \"Attempting to assign company already in outreach\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/outreach",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach"]
+        },
+        "description": "Attempts to assign a company that already has an active outreach. Should return HTTP 409 Conflict."
+      }
+    },
+    {
+      "name": "6. Get Sponsor Details & Audit Timeline",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/outreach/{{outreachId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "{{outreachId}}"]
+        },
+        "description": "Fetches outreach details along with full chronological event timeline."
+      }
+    },
+    {
+      "name": "7. Update Status (Move to Meeting)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"MEETING\",\n  \"meetingLink\": \"https://meet.google.com/abc-xyz-123\",\n  \"reason\": \"Sponsor confirmed interest in Gold tier virtual meeting\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/outreach/{{outreachId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "{{outreachId}}", "status"]
+        },
+        "description": "Updates status to MEETING and saves Google Meet link and timestamp."
+      }
+    },
+    {
+      "name": "8. Close Outreach with Reason",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Sponsor annual CSR budget exhausted\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/outreach/{{outreachId}}/close",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "{{outreachId}}", "close"]
+        },
+        "description": "Closes outreach and clears any scheduled follow-ups."
+      }
+    },
+    {
+      "name": "9. List Team Members (Owners)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/team-members",
+          "host": ["{{baseUrl}}"],
+          "path": ["team-members"]
+        },
+        "description": "Lists organizers and sponsorship coordinators."
+      }
+    },
+    {
+      "name": "10. P4 Webhook Simulation (Sent & Reply Event)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"reply\",\n  \"threadId\": \"gmail_thread_github_101\",\n  \"label\": \"interested\",\n  \"notes\": \"Simulating sponsor reply via Gmail\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/outreach/webhook",
+          "host": ["{{baseUrl}}"],
+          "path": ["outreach", "webhook"]
+        },
+        "description": "Simulates Person 4 Gmail integration webhook notifying Person 3 of an incoming reply."
+      }
+    }
+  ]
+}
