@@ -1,216 +1,166 @@
-# Sponsy Bot - Hackathon Development Plan
-**Track 2 | 4-Person Hackathon | Backend-Heavy | Human-in-the-loop | Free APIs only | 20-40 emails/day**
+# Sponsy Bot - Sponsorship Outreach Automation
+**Track 5 | 4-Person Hackathon | Backend-Heavy | Human-in-the-Loop | Free APIs Only**
 
-## Project Overview
-**What Sponsy Bot does:** Automates sponsor outreach end-to-end. A human approves every important step.
-
-**Features:**
-*   **Prioritise & categorise** sponsors so the team targets best-fit companies first.
-*   **Pick whom to approach and what to ask** (money, goodies, or infrastructure) from company history.
-*   **Personalise every email** using company research.
-*   **Track emails, follow-ups, and owners** (who contacted which company).
-*   **Max 2 follow-ups**, then stop. Nothing is sent without human approval.
-
-### The Golden Rule
-**AI generates the email -> Human reviews -> Human approves -> Gmail sends it**
-*No email leaves the system unless its status is APPROVED. Follow-ups obey the same rule.*
+Automates university hackathon sponsor outreach end-to-end. It replaces scattered spreadsheets, forgotten follow-ups, and generic mass emails with an intelligent, human-supervised outreach pipeline.
 
 ---
 
-## Complete Workflow
-1. Research Company
-2. Prioritise Sponsor
-3. Pick Tier & Ask
-4. Generate Personalised Email
-5. Human Approval *(edit/rewrite loop: reject sends it back to Writer)*
-6. Send via Gmail
-7. Check Reply
-8. Outcome Detected:
-    *   **Interested:** Book virtual meeting
-    *   **No Reply:** Follow-up (max 2, then stop)
-    *   **Declined:** Mark closed
-
-**Suggested Stack:** LangGraph, Tavily, Apollo/Hunter, Gemini/Grok (free alternatives allowed).
+### 🛡️ The Golden Rule
+> **AI generates the email ➔ Human reviews & edits ➔ Human approves ➔ Gmail sends it**
+> 
+> *No email leaves the system unless its status is `APPROVED`. Follow-ups obey the exact same rule. Maximum 2 follow-ups per sponsor—spamming is strictly blocked.*
 
 ---
 
-## System Architecture
-**One backend, four owned modules.** Frontend is only a thin demo layer. All logic lives in the backend. Everything is internal to one module — nobody waits on anybody.
+## 🚦 Project Status (Current vs Upcoming)
 
-### Integration Points (Only 4 Hand-offs)
-1. **P1 -> P2 (Company / Sponsor Data):** Research, score, category, recommendedTier, recommendedAsk.
-2. **P2 -> P4 (Generated Email):** Email ID + subject/body, status `PENDING_APPROVAL`.
-3. **P4 -> P3 (Sent Email / Reply):** Events: sent `{emailId, threadId}`, reply `{threadId, label}`.
-4. **P3 -> UI (Outreach Status):** Dashboard reads status, followUpCount, nextFollowUpAt.
+| Module | Role | Status | Description |
+|---|---|---|---|
+| **Person 1** | Sponsor Intelligence & Research | 🟢 **COMPLETED** | Company CRUD, duplicate outreach prevention, Tavily search, Gemini `gemini-3.8-flash` scoring (6-factor breakdown), tier & ask recommendations, and leaderboard ranking. |
+| **Person 3** | Outreach CRM & Follow-up Engine | 🟢 **COMPLETED** | CRM tracking, team owner assignments, timeline event audit log (`OutreachEvent`), **strict max 2 follow-ups block**, overdue follow-up detection, and pipeline analytics. |
+| **Person 2** | AI Email & Personalisation Engine | 🟡 **UPCOMING** | Email draft generation, prompt templates, AI regeneration, human edit versioning (`models/email.js`, `/emails/*`). |
+| **Person 4** | Approval Workflow, Gmail & Frontend | 🟡 **UPCOMING** | Human approval gatekeeper (`/emails/:id/approve`), Gmail send guard (`/gmail/send`), reply detection webhook, and demo frontend. |
 
 ---
 
-## Team Division
+## 🟢 Completed Modules (In Active Codebase)
 
-### PERSON 1: Sponsor Intelligence & Research Engine
+### 1. Person 1: Sponsor Intelligence & Research Engine
 *Turn a company name into a ranked sponsor with a recommended tier and ask.*
 
-*   **Responsibilities:**
-    *   Company/sponsor database (CRUD)
-    *   Research each company with Tavily (or free search API)
-    *   Categorise sponsors (industry/type)
-    *   Score and rank sponsors so best fits come first
-    *   Recommend sponsor tier & ask (money, goodies, infrastructure)
-    *   Store previous sponsorship/history info
-    *   AI-assisted company analysis (Gemini/Grok free tier)
-    *   *Optional:* find contacts (Apollo/Hunter); manual entry as fallback
-*   **APIs Owned:**
-    *   `POST /companies` (Add a sponsor company)
-    *   `GET /companies` (List/filter companies)
-    *   `GET /companies/:id` (Full details + research + tier + ask)
-    *   `POST /companies/research` (Run research, score, categorize)
-    *   `GET /companies/rank` (Ranked list for team)
-*   **Database Entities:** Company (shared), Research Note, Sponsorship History
-*   **Dependencies:** Needs nothing to start (standalone). Gives Company data to P2 and dashboard.
+* **Duplicate Outreach Prevention:** `POST /companies` verifies company name and website domains against existing records (case-insensitive) to prevent duplicate organizer outreach.
+* **Tavily Research Integration:** Real-time web search for hackathon/sponsorship history, tech stacks, and developer programs.
+* **AI Fit Scoring (Gemini `gemini-3.8-flash`):** Evaluates companies across 6 objective factors (Max 100):
+  * `eventFit` (max 25)
+  * `sponsorshipEvidence` (max 20)
+  * `educationCommunityFit` (max 15)
+  * `productRelevance` (max 15)
+  * `audienceFit` (max 15)
+  * `sponsorshipPotential` (max 10)
+* **Tier & Ask Recommendations:**
+  * **Tiers:** Platinum (≥90), Gold (≥75), Silver (≥60), Bronze (<60).
+  * **Asks:** `money` (cash grant), `goodies` (swag/food), `infra` (cloud/API credits).
+* **Verification & Institutional Memory:** Flags evidence (`isVerified: Boolean`, `confidence: HIGH/MEDIUM/LOW/UNVERIFIED`) and provides `sponsorshipHistory` storage for future teams.
 
-### PERSON 2: AI Email & Personalisation Engine
-*Write a personalised email for every sponsor and never send it.*
+**Live Endpoints (Person 1):**
+* `POST /companies` — Add a new company (with duplicate prevention)
+* `GET /companies` — List & filter companies by category and minimum score
+* `GET /companies/:id` — Full company details, research notes, tier, and ask
+* `POST /companies/research` — Trigger Tavily search + Gemini analysis and score computation
+* `GET /companies/rank` — Leaderboard of companies ranked by fit score
 
-*   **Responsibilities:**
-    *   Generate personalised sponsor emails & subject lines
-    *   Use company research and recommended tier/ask
-    *   Regenerate on request; allow edits before approval
-    *   Maintain email versions
-    *   Same engine writes follow-up 1 and 2 drafts
-*   **APIs Owned:**
-    *   `POST /emails/generate` (Create draft from companyId)
-    *   `POST /emails/regenerate` (New version, same company)
-    *   `POST /emails/edit` (Save a human edit as new version)
-    *   `GET /emails/:id` (Email + all versions + status)
-*   **Database Entities:** Email (shared), Email Version (body history), PromptTemplate
-*   **Dependencies:** Needs Company fields from P1 (use mock JSON until ready). Gives Email ID to P4 for approval.
+---
 
-### PERSON 3: Outreach CRM & Follow-up Engine
+### 2. Person 3: Outreach CRM & Follow-up Engine
 *Always know who contacted whom, what happened, and when to follow up or stop.*
 
-*   **Responsibilities:**
-    *   Track every sponsor outreach, owners, sent emails, and replies
-    *   Track follow-up count & calculate next follow-up date
-    *   Prevent excessive follow-ups (auto-stop after 2)
-    *   Track states: interested, declined, no-response, meeting
-    *   Keep complete outreach history
-*   **APIs Owned:**
-    *   `GET /outreach` (All outreach + status)
-    *   `GET /outreach/:id` (One outreach + timeline)
-    *   `POST /outreach/:id/followup` (Register follow-up, blocked after 2)
-    *   `POST /outreach/:id/close` (Close with reason)
-    *   `GET /outreach/pending-followups` (Follow-ups due now)
-    *   `GET /outreach/history` (Full comms history)
-*   **Database Entities:** Outreach (shared), OutreachEvent, TeamMember
-*   **Dependencies:** Needs emailId from P2, sent/reply events from P4 (simulate with seed script). Gives Outreach status to dashboard.
+* **Owner & Sponsor Tracking:** Maps sponsors to specific organizers (`TeamMember`), ensuring no two organizers contact the same company.
+* **Spam Prevention (Hard Cap at 2 Follow-ups):**
+  * **Follow-up 1:** Allowed, increments count to 1, schedules follow-up in +3 days.
+  * **Follow-up 2:** Allowed, increments count to 2, clears next schedule (limit reached).
+  * **Follow-up 3:** **Strictly BLOCKED with HTTP 400 Bad Request**. Outreach is automatically moved to `CLOSED` with reason: `MAX_FOLLOWUPS_REACHED`.
+* **Full Audit Trail (`OutreachEvent`):** Chronological timeline of every interaction, status transition, and note.
+* **Overdue Follow-up Detection:** Automatically queries sponsors due for follow-ups today (`GET /outreach/pending-followups`).
+* **Pipeline Metrics:** Real-time stats on total outreach, stage counts, reply rate %, and conversion rate % (`GET /outreach/stats`).
 
-### PERSON 4: Gmail Integration, Human Approval & System Integration
+**Live Endpoints (Person 3):**
+* `GET /outreach` — List all outreach records (filterable by `status`, `memberId`, `companyId`)
+* `GET /outreach/pending-followups` — Get follow-ups due now (`nextFollowUpAt <= now` & `followUpCount < 2`)
+* `GET /outreach/stats` — Dashboard analytics (status breakdown, reply rate %)
+* `GET /outreach/:id` — Single outreach details with complete chronological event timeline
+* `GET /outreach/history` — Global communications timeline across all sponsors
+* `POST /outreach` — Create and assign outreach (blocks duplicate company assignment with HTTP 409)
+* `POST /outreach/:id/followup` — Register follow-up (enforces max 2 limit)
+* `POST /outreach/:id/close` — Close outreach with reason
+* `POST /outreach/:id/status` — Move to `INTERESTED`, `MEETING` (with Google Meet link), or `DECLINED`
+* `POST /outreach/webhook` — Webhook receiver for Person 4 sent and reply events
+* `GET /team-members` & `POST /team-members` — Manage organizers
+
+---
+
+## 🟡 Upcoming Modules (Specifications for Teammates)
+
+### 3. Person 2: AI Email & Personalisation Engine (To Be Added)
+*Write a personalised email for every sponsor and never send it.*
+
+* **Responsibilities:**
+  * Define `models/email.js` with versioning (`version: Number`, `versions: [{ version, subject, body, editedBy }]`).
+  * Implement `POST /emails/generate` using Gemini to draft customized pitches based on Person 1's `category`, `recommendedTier`, `recommendedAsk`, and `whyGoodSponsor`.
+  * Implement `POST /emails/regenerate` for alternative drafts.
+  * Implement `POST /emails/edit` to record organizer edits as new versions.
+  * Implement `GET /emails/:id` and `GET /emails/pending-approval`.
+* **Agreed Contract:**
+  * Drafts must default to status `PENDING_APPROVAL`. No email leaves this module.
+
+### 4. Person 4: Gmail Integration, Approval & Frontend (To Be Added)
 *Make approval the only door to Gmail, then wire everything together.*
 
-*   **Responsibilities:**
-    *   Gmail integration (OAuth, send, read)
-    *   Send **only** approved emails; Check replies & associate threads
-    *   Human approval workflow (approve/reject)
-    *   Final backend integration: connect P1, P2, P3 modules
-    *   Orchestrate the workflow (LangGraph suggested)
-    *   Suggest reply label for human confirmation
-    *   Build the minimal frontend for the demo
-*   **APIs Owned:**
-    *   `POST /gmail/send` (Send APPROVED email only)
-    *   `GET /gmail/messages` (Fetch new replies)
-    *   `GET /gmail/thread/:id` (Thread for one sponsor)
-    *   `POST /emails/:id/approve` (Human approves)
-    *   `POST /emails/:id/reject` (Human rejects -> rewrite)
-*   **Database Entities:** ApprovalLog, Gmail Thread
-*   **Dependencies:** Needs Email records from P2 (mock one), outreach update from P3 (stub). Gives sent/reply events to P3.
+* **Responsibilities:**
+  * Human approval endpoints: `POST /emails/:id/approve` and `POST /emails/:id/reject`.
+  * Gmail integration: `POST /gmail/send` with **Send Guard** (blocks any email whose status is not `APPROVED`).
+  * Reply detection: Check incoming replies and forward events to Person 3 via `POST /outreach/webhook`.
+  * Build the minimal demo frontend (5 screens: Dashboard, Sponsors table, Approval Queue, CRM table, Detail modal).
 
 ---
 
-## Shared Data Models
-*Agree schemas and API contracts once. After that, nobody waits for anybody.*
+## 🧪 Testing & Verification Guide
 
-### 1. Company (Owner: P1)
-*   `id`: uuid
-*   `name`: string
-*   `website`: string
-*   `industry`: string
-*   `research`: json / text
-*   `score`: number
-*   `category`: string
-*   `recommendedTier`: string
-*   `recommendedAsk`: enum (money | goodies | infra)
+### 1. Run Automated Logic Tests (Person 3)
+Verifies status enums, follow-up progression, the 3rd follow-up spam block, and status transitions:
+```bash
+cd backend
+node src/scripts/testOutreachLogic.js
+```
 
-### 2. Email (Owner: P2)
-*   `id`: uuid
-*   `companyId`: Company.id
-*   `subject`: string
-*   `createdAt`: datetime
-*   `body`: text
-*   `status`: enum
-*   `version`: int
+### 2. Seed Clean Demo Data
+Populates MongoDB with 3 organizers and 5 realistic outreach scenarios across all lifecycle stages:
+```bash
+cd backend
+npm run seed:outreach
+```
+*Creates: GitHub (Waiting for reply), Cloudflare (Due for follow-up now), Red Bull (Meeting booked), HDFC Bank (Declined), Notion (Closed after 2 follow-ups).*
 
-### 3. Outreach (Owner: P3)
-*   `id`: uuid
-*   `companyId`: Company.id
-*   `emailId`: Email.id
-*   `memberId`: TeamMember
-*   `status`: enum
-*   `followUpCount`: int (max 2)
-*   `nextFollowUpAt`: datetime
-*   `lastReplyAt`: datetime
-
-### Agreed Status Values
-*   **Email.status:** `DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `SENT`
-*   **Outreach.status:** `DRAFT`, `APPROVED`, `SENT`, `WAITING FOR REPLY`, `INTERESTED`, `MEETING`, `DECLINED`, `NO REPLY`, `FOLLOW-UP 1`, `FOLLOW-UP 2`, `CLOSED`
+### 3. Postman Collection
+Import the pre-configured Postman collection directly:
+* **File:** [`backend/SponsyBot_Person3_Postman_Collection.json`](file:///Users/hetsavani/Documents/Projects/SponcyBot/backend/SponsyBot_Person3_Postman_Collection.json)
+* Contains all 10 requests pre-configured with headers, URLs, and sample request bodies.
 
 ---
 
-## Development Phases
-1. **Phase 1: Foundations (All 4):** Agree database schemas & API contracts. Set up repo, skeleton, API keys.
-2. **Phase 2: Parallel Build (Independent):** Build modules using mocks/seeds.
-3. **Phase 3: Integrate (P4 Leads):** Replace mocks with real calls. Orchestration wiring. Connect UI to APIs.
-4. **Phase 4: Gmail + Approval Testing (P4 + All):** Test inbox. Prove send guard (APPROVED only). Reject/rewrite loop.
-5. **Phase 5: End-to-End Testing (All 4):** Full flow on companies. Verify max 2 follow-ups. Dry run 20-40 emails/day.
-6. **Phase 6: Demo Preparation (All 4):** Seed clean demo data, write script, finalize README.
+## ⚙️ Installation & Setup
+
+1. **Clone & Install Dependencies:**
+   ```bash
+   cd backend
+   npm install
+   ```
+
+2. **Configure Environment Variables (`backend/.env`):**
+   ```env
+   MONGODB_URI=your_mongodb_connection_string
+   TAVILY_API_KEY=your_tavily_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   GEMINI_MODEL=gemini-3.8-flash
+   ```
+
+3. **Start the Backend Server:**
+   ```bash
+   npm start
+   # Server runs on http://localhost:5000
+   ```
 
 ---
 
-## End-to-End Demo Flow
-1. **P1:** Add a company (`POST /companies`)
-2. **P1:** Research company (`POST /companies/research`) -> Score (`82/100`), Category (`Cloud & dev tools`)
-3. **P1:** Recommended tier (`Gold`) & Ask (`cloud credits + prize money`)
-4. **P2:** AI generates personalised email (`POST /emails/generate` -> `PENDING_APPROVAL`)
-5. **P2:** Human edits / approves (`POST /emails/edit`, `POST /emails/:id/approve`)
-6. **P4:** Gmail sends email (`POST /gmail/send` - APPROVED only)
-7. **P4:** Reply is detected (`GET /gmail/messages`, thread linked)
-8. **P3:** Status marked (Interested -> meeting, No reply, Declined -> closed)
-9. **P3/P2/P4:** Follow-up when required (Scheduler flags -> P2 drafts -> Human approves -> sent)
-10. **P3:** Stops after max 2 follow-ups (Third attempt blocked -> `CLOSED`)
+## 📋 Hackathon Compliance Checklist
 
----
-
-## Minimal Frontend Architecture (Built by P4)
-*Just enough UI to prove the backend. Plain tables and buttons - no design effort.*
-
-1. **Dashboard:** Counts by status, pending approvals, follow-ups due (`GET /outreach`)
-2. **Sponsors:** Ranked list, add company, run research (`GET /companies/rank`)
-3. **Approval Queue:** Read, edit, approve, or reject drafts (`/emails/:id/approve`)
-4. **Outreach / Follow-ups:** Status, contact owner, history, pending follow-ups (`GET /outreach/pending-followups`)
-5. **Sponsor Details:** Research, tier, ask, email versions, timeline (`GET /companies/:id`)
-
----
-
-## Hackathon Compliance Checklist
-- [x] **Backend-heavy:** 4 backend modules; frontend demo only
-- [x] **Sponsor prioritisation:** P1 score + rank endpoint
-- [x] **Human approval before sending:** Send guard (only APPROVED go out)
-- [x] **Sponsor categorisation:** P1 categorisation service
-- [x] **Personalised emails:** P2 uses research, tier, and ask
-- [x] **Follow-up automation:** P3 scheduler flags -> human approves
-- [x] **Gmail integration:** P4 Gmail service (send + replies)
-- [x] **20-40 emails/day target:** Queue + cached research
-- [x] **Modular 4-person development:** Contract-first, mocks, 4 owners
-- [x] **Outreach tracking:** P3 model + history, with member owner
-- [x] **Maximum 2 follow-ups:** P3 rule blocks 3rd, then CLOSED
-- [x] **Free APIs only:** Tavily, Gemini/Grok free tier, Gmail API
-- [x] **Minimal frontend:** 5 simple screens by P4
+- [x] **Backend-heavy:** Core business logic, scoring, and follow-up engines live in backend
+- [x] **Sponsor Prioritisation:** Person 1 6-factor score + leaderboard ranking (`GET /companies/rank`)
+- [x] **Sponsor Categorisation:** 13 industry categories with fallback sanitization
+- [x] **Institutional Memory:** `sponsorshipHistory` schema to persist past sponsor data
+- [x] **Duplicate Outreach Prevention:** Case-insensitive validation stops duplicate outreach
+- [x] **Outreach Tracking:** Full CRM with owner assignment and chronological audit timeline
+- [x] **Strict 2 Follow-Ups Limit:** Hard-coded block and auto-close on 3rd follow-up attempt
+- [x] **Free APIs Only:** Tavily (search), Google Gemini `gemini-3.8-flash` (free tier), MongoDB Atlas
+- [ ] **AI Email Personalisation:** Person 2 implementation in progress
+- [ ] **Human Approval & Gmail Send Guard:** Person 4 implementation in progress
+- [ ] **Demo Frontend Layer:** Person 4 implementation in progress
