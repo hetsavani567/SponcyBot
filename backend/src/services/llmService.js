@@ -14,7 +14,7 @@ Company: ${company.name}
 Website: ${company.website}
 
 Research:
-${(company.research || "").slice(0, 500)}
+${(company.research || "").slice(0, 3000)}
 
 Return ONLY valid JSON:
 
@@ -31,7 +31,9 @@ Return ONLY valid JSON:
   "whyGoodSponsor": "",
   "strategy": "",
   "whatToAsk": "",
-  "shortPitch": ""
+  "shortPitch": "",
+  "isVerified": false,
+  "confidence": "UNVERIFIED"
 }
 
 Scoring:
@@ -48,6 +50,8 @@ Rules:
 - Do not exceed the maximum for any factor.
 - Do not invent facts.
 - Score conservatively when evidence is weak.
+- isVerified: true if verified evidence of past sponsorships/hackathons exists in research, false otherwise.
+- confidence must be exactly one of: "HIGH", "MEDIUM", "LOW", "UNVERIFIED".
 
 category must be exactly one of:
 "Technology", "Cloud & Developer Tools", "AI & Data",
@@ -70,8 +74,11 @@ Return the complete JSON object.
   console.log("Starting Gemini...");
   console.time("Gemini");
 
+  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  console.log(`Using model: ${model}`);
+
   const response = await client.models.generateContent({
-    model: "gemini-3.8-flash",
+    model,
     contents: prompt,
     config: {
       responseMimeType: "application/json",

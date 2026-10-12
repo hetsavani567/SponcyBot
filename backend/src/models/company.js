@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const companySchema = new mongoose.Schema(
@@ -24,15 +23,10 @@ const companySchema = new mongoose.Schema(
             type: String,
             default: ""
         },
-        sources: {
-            type: [String],
-            default: []
-        },
         researchedAt: {
             type: Date,
             default: null
         },
-
         sources: {
             type: [
                 {
@@ -51,6 +45,10 @@ const companySchema = new mongoose.Schema(
                 }
             ],
             default: []
+        },
+        score: {
+            type: Number,
+            default: 0
         },
         eventFit: {
             type: Number,
@@ -100,10 +98,69 @@ const companySchema = new mongoose.Schema(
         shortPitch: {
             type: String,
             default: ""
+        },
+        isVerified: {
+            type: Boolean,
+            default: false
+        },
+        confidence: {
+            type: String,
+            enum: ["HIGH", "MEDIUM", "LOW", "UNVERIFIED"],
+            default: "UNVERIFIED"
+        },
+        contactName: {
+            type: String,
+            default: ""
+        },
+        contactEmail: {
+            type: String,
+            default: ""
+        },
+        contactRole: {
+            type: String,
+            default: ""
+        },
+        linkedinUrl: {
+            type: String,
+            default: ""
+        },
+        sponsorshipHistory: {
+            type: [
+                {
+                    eventName: {
+                        type: String,
+                        default: ""
+                    },
+                    year: {
+                        type: Number,
+                        default: null
+                    },
+                    tier: {
+                        type: String,
+                        default: ""
+                    },
+                    askType: {
+                        type: String,
+                        enum: ["money", "goodies", "infra", "other"],
+                        default: "money"
+                    },
+                    amountOrValue: {
+                        type: String,
+                        default: ""
+                    },
+                    notes: {
+                        type: String,
+                        default: ""
+                    }
+                }
+            ],
+            default: []
         }
     },
     {
-        timestamps: true
+        timestamps: true,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
     }
 );
 

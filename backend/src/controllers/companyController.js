@@ -13,19 +13,26 @@ const getScoreBreakdown = (company) => ({
 
 const formatRankedCompany = (company, index) => ({
   rank: index + 1,
-  id: company.id,
+  id: company.id || company._id,
   company: company.name,
   website: company.website,
   industry: company.industry,
   category: company.category,
-  score: company.score,
+  score: company.score || 0,
   recommendedTier: company.recommendedTier,
   recommendedAsk: company.recommendedAsk,
   scoreBreakdown: getScoreBreakdown(company),
   whyGoodSponsor: company.whyGoodSponsor,
   strategy: company.strategy,
   whatToAsk: company.whatToAsk,
-  shortPitch: company.shortPitch
+  shortPitch: company.shortPitch,
+  isVerified: company.isVerified || false,
+  confidence: company.confidence || "UNVERIFIED",
+  contactName: company.contactName || "",
+  contactEmail: company.contactEmail || "",
+  contactRole: company.contactRole || "",
+  linkedinUrl: company.linkedinUrl || "",
+  sponsorshipHistory: company.sponsorshipHistory || []
 });
 
 const research = async (req, res) => {
@@ -60,7 +67,9 @@ const research = async (req, res) => {
       "whyGoodSponsor",
       "strategy",
       "whatToAsk",
-      "shortPitch"
+      "shortPitch",
+      "isVerified",
+      "confidence"
     ];
 
     for (const field of fields) {
@@ -83,32 +92,12 @@ const research = async (req, res) => {
       company.score >= 90 ? "Platinum" :
       company.score >= 75 ? "Gold" :
       company.score >= 60 ? "Silver" : "Bronze";
-console.log("SCORES BEFORE SAVE:", {
-  eventFit: company.eventFit,
-  sponsorshipEvidence: company.sponsorshipEvidence,
-  educationCommunityFit: company.educationCommunityFit,
-  productRelevance: company.productRelevance,
-  audienceFit: company.audienceFit,
-  sponsorshipPotential: company.sponsorshipPotential
-});
 
-console.log("CALCULATED SCORE:", company.score);
-
-await company.save();
-
-console.log("SCORE AFTER SAVE:", company.score);
     await company.save();
 
     res.json({
       ...company.toObject(),
-      scoreBreakdown: {
-        eventFit: company.eventFit,
-        sponsorshipEvidence: company.sponsorshipEvidence,
-        educationCommunityFit: company.educationCommunityFit,
-        productRelevance: company.productRelevance,
-        audienceFit: company.audienceFit,
-        sponsorshipPotential: company.sponsorshipPotential
-      }
+      scoreBreakdown: getScoreBreakdown(company)
     });
   } catch (error) {
     console.error("Company research error:", error);
@@ -122,7 +111,17 @@ console.log("SCORE AFTER SAVE:", company.score);
 
 const addCompany = async (req, res) => {
   try {
-    const { name, website } = req.body || {};
+    const {
+      name,
+      website,
+      industry,
+      category,
+      contactName,
+      contactEmail,
+      contactRole,
+      linkedinUrl,
+      sponsorshipHistory
+    } = req.body || {};
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({
@@ -130,9 +129,35 @@ const addCompany = async (req, res) => {
       });
     }
 
+    const trimmedName = String(name).trim();
+
+    // Prevent duplicate outreach: check existing company by name (case-insensitive) or website
+    const duplicateQuery = [
+      { name: { $regex: `^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }
+    ];
+
+    if (website && String(website).trim()) {
+      duplicateQuery.push({ website: String(website).trim() });
+    }
+
+    const existingCompany = await Company.findOne({ $or: duplicateQuery });
+    if (existingCompany) {
+      return res.status(409).json({
+        message: "Company already exists in the tracker to prevent duplicate outreach",
+        company: existingCompany
+      });
+    }
+
     const company = await Company.create({
-      name: String(name).trim(),
-      website: website || ""
+      name: trimmedName,
+      website: website || "",
+      industry: industry || "",
+      category: category || "Other",
+      contactName: contactName || "",
+      contactEmail: contactEmail || "",
+      contactRole: contactRole || "",
+      linkedinUrl: linkedinUrl || "",
+      sponsorshipHistory: Array.isArray(sponsorshipHistory) ? sponsorshipHistory : []
     });
 
     res.status(201).json(company);
@@ -289,7 +314,26 @@ const updateCompany = async (req, res) => {
       });
     }
 
-    const allowedFields = ["name", "website"];
+    const allowedFields = [
+      "name",
+      "website",
+      "industry",
+      "category",
+      "recommendedTier",
+      "recommendedAsk",
+      "whyGoodSponsor",
+      "strategy",
+      "whatToAsk",
+      "shortPitch",
+      "isVerified",
+      "confidence",
+      "contactName",
+      "contactEmail",
+      "contactRole",
+      "linkedinUrl",
+      "sponsorshipHistory",
+      "score"
+    ];
     const updates = {};
 
     for (const field of allowedFields) {
@@ -300,7 +344,7 @@ const updateCompany = async (req, res) => {
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
-        message: "Provide name or website to update"
+        message: "Provide at least one valid field to update"
       });
     }
 
@@ -315,15 +359,6 @@ const updateCompany = async (req, res) => {
 
     if (updates.name !== undefined) {
       updates.name = updates.name.trim();
-    }
-
-    if (
-      updates.website !== undefined &&
-      typeof updates.website !== "string"
-    ) {
-      return res.status(400).json({
-        message: "Website must be a string"
-      });
     }
 
     const company = await Company.findByIdAndUpdate(

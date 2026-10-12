@@ -77,9 +77,15 @@ console.log("GEMINI SCORES:", {
   company.sponsorshipPotential =
     Number(company.sponsorshipPotential) || 0;
 
+  const validConfidences = ["HIGH", "MEDIUM", "LOW", "UNVERIFIED"];
+  company.confidence = validConfidences.includes(company.confidence)
+    ? company.confidence
+    : "UNVERIFIED";
+  company.isVerified = Boolean(company.isVerified);
+
   company.score = calculateFinalScore(company);
   company.recommendedTier = getTier(company.score);
-console.log("FINAL SCORE:", company.score);
+  console.log("FINAL SCORE:", company.score);
   return company;
 };
 

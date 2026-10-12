@@ -1,4 +1,5 @@
 const { analyzeCompany } = require("../services/sponsorIntelligence");
+const { getCompanyById } = require("./companyController");
 
 const sponsorStrategy = async (req, res) => {
   try {
@@ -10,7 +11,7 @@ const sponsorStrategy = async (req, res) => {
       });
     }
 
-    const company = require("./companyController").getCompanyById(companyId);
+    const company = await getCompanyById(companyId);
 
     if (!company) {
       return res.status(404).json({
