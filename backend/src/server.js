@@ -7,6 +7,8 @@ const mongoose = require("mongoose");
 
 const llmRoutes = require("./routes/llmRoutes");
 const companyRoutes = require("./routes/companyRoutes");
+const outreachRoutes = require("./routes/outreachRoutes");
+const teamMemberRoutes = require("./routes/teamMemberRoutes");
 
 const app = express();
 
@@ -21,6 +23,8 @@ app.get("/", (req, res) => {
 
 app.use("/companies", companyRoutes);
 app.use("/llm", llmRoutes);
+app.use("/outreach", outreachRoutes);
+app.use("/team-members", teamMemberRoutes);
 
 const startServer = async () => {
   try {
