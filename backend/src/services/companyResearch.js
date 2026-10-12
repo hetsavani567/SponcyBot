@@ -62,7 +62,7 @@ Title: ${result.title || ""}
 
 URL: ${result.url || ""}
 
-Content: ${(result.content || "").slice(0, 500)}
+Content: ${(result.content || "").slice(0, 1000)}
 `;
       })
       .join("\n");
@@ -70,7 +70,7 @@ Content: ${(result.content || "").slice(0, 500)}
     const sources = selectedResults.map((result) => ({
       title: result.title || "",
       url: result.url || "",
-      evidence: (result.content || "").slice(0, 200)
+      evidence: (result.content || "").slice(0, 500)
     }));
 
     return {
@@ -86,7 +86,7 @@ Content: ${(result.content || "").slice(0, 500)}
 
   } catch (error) {
     console.error("Company research failed:", error.message);
-    throw new Error("Company research failed");
+    throw new Error(`Company research failed: ${error.message}`);
   }
 };
 
