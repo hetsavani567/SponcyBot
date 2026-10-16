@@ -9,6 +9,7 @@ const llmRoutes = require("./routes/llmRoutes");
 const companyRoutes = require("./routes/companyRoutes");
 const outreachRoutes = require("./routes/outreachRoutes");
 const teamMemberRoutes = require("./routes/teamMemberRoutes");
+const emailRoutes = require("./routes/emailRoutes");
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/companies", companyRoutes);
 app.use("/llm", llmRoutes);
 app.use("/outreach", outreachRoutes);
 app.use("/team-members", teamMemberRoutes);
+app.use("/emails", emailRoutes);
 
 const startServer = async () => {
   try {
