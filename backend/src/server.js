@@ -58,12 +58,48 @@ if (process.env.MONGODB_URI) {
     );
 }
 
+// ─── API 404 and SPA Fallback Handler ───────────────────────────────────────
+// Ensure any API / data route request that is not found ALWAYS returns JSON, not HTML
+app.use((req, res, next) => {
+  const isApiRequest =
+    req.path.startsWith("/companies") ||
+    req.path.startsWith("/gmail") ||
+    req.path.startsWith("/outreach") ||
+    req.path.startsWith("/llm") ||
+    req.path.startsWith("/emails") ||
+    req.path.startsWith("/team-members") ||
+    req.path.startsWith("/api") ||
+    !req.accepts("html");
+
+  if (isApiRequest) {
+    return res.status(404).json({
+      success: false,
+      error: `Endpoint not found: ${req.method} ${req.originalUrl}`
+    });
+  }
+
+  // Fallback to index.html for Single Page App navigation
+  res.sendFile(path.join(publicPath, "index.html"));
+});
+
+// ─── Centralized Error Handler (JSON) ───────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error("[ServerError]", err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+    error: process.env.NODE_ENV === "production" ? undefined : err.stack
+  });
+});
+
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
+  const HOST = process.env.HOST || "0.0.0.0";
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 
 module.exports = app;
+
