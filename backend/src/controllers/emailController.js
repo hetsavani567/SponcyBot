@@ -8,6 +8,11 @@ const {
   recordHumanEdit,
   getEmailWithVersions
 } = require("../services/emailVersioningService");
+const {
+  approveEmailWithLog,
+  rejectEmailWithLog,
+  getApprovalHistory
+} = require("../services/approvalService");
 const mockCompanies = require("../mocks/companies.json");
 
 /**
@@ -334,37 +339,18 @@ const getPendingApprovalEmails = async (req, res) => {
 const approveEmail = async (req, res) => {
   try {
     const { id } = req.params;
+    const { reviewerName = "Human Reviewer", notes = "" } = req.body || {};
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid email ID format"
-      });
-    }
-
-    const email = await Email.findById(id);
-
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found"
-      });
-    }
-
-    if (email.status !== "PENDING_APPROVAL") {
-      return res.status(409).json({
-        success: false,
-        message: `Cannot approve an email that is ${email.status}`
-      });
-    }
-
-    email.status = "APPROVED";
-    await email.save();
+    const { email, log } = await approveEmailWithLog({
+      emailId: id,
+      reviewerName,
+      notes
+    });
 
     return res.status(200).json({
       success: true,
       message: "Email approved successfully",
-      data: { email }
+      data: { email, approvalLog: log }
     });
   } catch (error) {
     console.error("Error in approveEmail:", error);
@@ -376,51 +362,54 @@ const approveEmail = async (req, res) => {
 };
 
 /**
- * PATCH /emails/:id/reject
- * Rejects an email and moves it back to draft status
+ * POST / PATCH /emails/:id/reject
+ * Rejects an email and moves it back to draft status, recording rejection reason in audit log
  */
 const rejectEmail = async (req, res) => {
   try {
     const { id } = req.params;
+    const { reviewerName = "Human Reviewer", reason = "", notes = "" } = req.body || {};
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid email ID format"
-      });
-    }
-
-    const email = await Email.findById(id);
-
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found"
-      });
-    }
-
-    if (email.status !== "PENDING_APPROVAL") {
-      return res.status(409).json({
-        success: false,
-        message: `Cannot reject an email that is ${email.status}`
-      });
-    }
-
-    const { reason } = req.body;
-
-    email.status = "DRAFT";
-    await email.save();
+    const { email, log, reason: finalReason } = await rejectEmailWithLog({
+      emailId: id,
+      reviewerName,
+      reason,
+      notes
+    });
 
     return res.status(200).json({
       success: true,
       message: "Email rejected and moved back to draft",
-      data: { email, reason: reason || "Rejected by reviewer" }
+      data: { email, reason: finalReason, approvalLog: log }
     });
   } catch (error) {
     console.error("Error in rejectEmail:", error);
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to reject email"
+    });
+  }
+};
+
+/**
+ * GET /emails/:id/approval-history
+ * Returns the audit trail of approval and rejection decisions for an email
+ */
+const getEmailApprovalLogs = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const history = await getApprovalHistory(id);
+
+    return res.status(200).json({
+      success: true,
+      count: history.length,
+      data: history
+    });
+  } catch (error) {
+    console.error("Error in getEmailApprovalLogs:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch approval history"
     });
   }
 };
@@ -433,5 +422,6 @@ module.exports = {
   getPendingApprovalEmails,
   listEmails,
   approveEmail,
-  rejectEmail
+  rejectEmail,
+  getEmailApprovalLogs
 };

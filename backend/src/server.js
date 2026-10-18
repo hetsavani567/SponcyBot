@@ -1,6 +1,13 @@
 
 require("dotenv").config();
 
+const dns = require("dns");
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {
+  // Ignore in environments where setting DNS servers is restricted
+}
+
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -10,6 +17,7 @@ const companyRoutes = require("./routes/companyRoutes");
 const outreachRoutes = require("./routes/outreachRoutes");
 const teamMemberRoutes = require("./routes/teamMemberRoutes");
 const emailRoutes = require("./routes/emailRoutes");
+const gmailRoutes = require("./routes/gmailRoutes");
 
 const app = express();
 
@@ -27,6 +35,7 @@ app.use("/llm", llmRoutes);
 app.use("/outreach", outreachRoutes);
 app.use("/team-members", teamMemberRoutes);
 app.use("/emails", emailRoutes);
+app.use("/gmail", gmailRoutes);
 
 const startServer = async () => {
   try {

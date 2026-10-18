@@ -193,6 +193,19 @@ const updateOutreachStatus = async (outreach, newStatus, { reason = "", meetingL
 };
 
 const getStats = async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      totalOutreach: 0,
+      statusCounts: {},
+      pendingFollowUpsDue: 0,
+      totalFollowUpsSent: 0,
+      repliesReceived: 0,
+      responseRatePercent: 0,
+      conversionsCount: 0,
+      conversionRatePercent: 0
+    };
+  }
+
   const allOutreaches = await Outreach.find();
   const total = allOutreaches.length;
 
