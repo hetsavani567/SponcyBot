@@ -88,10 +88,9 @@ const getOAuthStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("[GmailController] getOAuthStatus error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to get OAuth status",
-      error: error.message
+    return res.status(200).json({
+      success: true,
+      data: { connected: false, email: null }
     });
   }
 };
@@ -100,7 +99,7 @@ const getOAuthStatus = async (req, res) => {
  * POST /gmail/send
  * Sends an email via Gmail API.
  * Gated by sendGuard middleware: ONLY emails with status "APPROVED" can reach here.
- * Immediately notifies P3 Outreach CRM and updates status to "SENT".
+ * Immediately notifies Outreach CRM and updates status to "SENT".
  */
 const sendEmail = async (req, res) => {
   try {
@@ -141,7 +140,7 @@ const sendEmail = async (req, res) => {
     email.status = "SENT";
     await email.save();
 
-    // 2. Synchronize with P3 Outreach CRM
+    // 2. Synchronize with Outreach CRM
     let outreach = null;
     if (req.body.outreachId) {
       outreach = await Outreach.findById(req.body.outreachId);
@@ -161,7 +160,7 @@ const sendEmail = async (req, res) => {
           messageId: sendResult.messageId,
           recipient,
           senderEmail: sendResult.senderEmail,
-          notes: "Email sent via Gmail integration (P4)"
+          notes: "Email sent via Gmail integration"
         }
       });
     }
@@ -358,7 +357,7 @@ const classifyReplyHandler = async (req, res) => {
 
 /**
  * POST /gmail/replies/confirm
- * Human confirms the outcome of a reply -> Updates P3 Outreach CRM
+ * Human confirms the outcome of a reply -> Updates Outreach CRM
  * Valid labels: INTERESTED, DECLINED, NO_REPLY, OTHER
  */
 const confirmReplyHandler = async (req, res) => {
@@ -399,7 +398,7 @@ const confirmReplyHandler = async (req, res) => {
       );
     }
 
-    // 2. Find and update P3 Outreach record
+    // 2. Find and update Outreach record
     let outreach = null;
     if (outreachId) {
       outreach = await Outreach.findById(outreachId);

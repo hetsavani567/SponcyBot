@@ -30,7 +30,7 @@ const createMockEmail = (initialData = {}) => {
 };
 
 async function runTests() {
-  console.log("=== Starting Person 2 AI Email Engine Logic & Guard Tests ===\n");
+  console.log("=== Starting AI Email Engine Logic & Guard Tests ===\n");
 
   // Test 1: Verify Status Enum completeness
   console.log("Test 1: Status Enum completeness");
@@ -142,7 +142,7 @@ async function runTests() {
   console.log(`    Greeting: "${liveResult.body.split('\n')[0]}"`);
   console.log(`    Length: ${liveResult.body.length} characters`);
 
-  console.log("\n🎉 ALL PERSON 2 TESTS PASSED PERFECTLY!\n");
+  console.log("\n🎉 ALL EMAIL ENGINE TESTS PASSED PERFECTLY!\n");
 }
 
 runTests().catch((err) => {

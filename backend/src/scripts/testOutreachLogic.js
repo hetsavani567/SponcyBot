@@ -29,7 +29,7 @@ const createMockOutreach = (initialData = {}) => {
 };
 
 async function runTests() {
-  console.log("--- Starting Person 3 Logic Tests ---");
+  console.log("--- Starting Outreach CRM Logic Tests ---");
 
   // Test 1: Verify Status Enum completeness
   console.log("Test 1: Status Enum completeness");
@@ -96,7 +96,7 @@ async function runTests() {
   assert.strictEqual(outreach5.meetingLink, "https://meet.google.com/xyz-123");
   console.log("  ✓ Meeting booked transition verified");
 
-  console.log("\n🎉 ALL PERSON 3 LOGIC TESTS PASSED!");
+  console.log("\n🎉 ALL OUTREACH CRM LOGIC TESTS PASSED!");
 }
 
 runTests().catch(err => {

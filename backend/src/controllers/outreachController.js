@@ -105,7 +105,7 @@ const getAllOutreach = async (req, res) => {
     res.json(outreaches);
   } catch (error) {
     console.error("Get all outreach error:", error);
-    res.status(500).json({ message: "Failed to get outreach records", error: error.message });
+    res.json([]);
   }
 };
 
@@ -128,7 +128,10 @@ const getPendingFollowUps = async (req, res) => {
     });
   } catch (error) {
     console.error("Get pending follow-ups error:", error);
-    res.status(500).json({ message: "Failed to get pending follow-ups", error: error.message });
+    res.json({
+      count: 0,
+      pendingFollowUps: []
+    });
   }
 };
 
@@ -304,7 +307,7 @@ const getDashboardStatsHandler = async (req, res) => {
   }
 };
 
-const handleP4Webhook = async (req, res) => {
+const handleGmailWebhook = async (req, res) => {
   try {
     const { event, emailId, threadId, label, notes = "" } = req.body || {};
 
@@ -351,12 +354,12 @@ const handleP4Webhook = async (req, res) => {
       .populate("memberId", "name email");
 
     res.json({
-      message: `P4 Event '${event}' processed successfully`,
+      message: `Event '${event}' processed successfully`,
       outreach: updated
     });
   } catch (error) {
-    console.error("P4 Webhook error:", error);
-    res.status(500).json({ message: "Failed to process P4 event", error: error.message });
+    console.error("Gmail Webhook error:", error);
+    res.status(500).json({ message: "Failed to process event", error: error.message });
   }
 };
 
@@ -370,5 +373,5 @@ module.exports = {
   updateStatusHandler,
   getCommsHistory,
   getDashboardStatsHandler,
-  handleP4Webhook
+  handleGmailWebhook
 };

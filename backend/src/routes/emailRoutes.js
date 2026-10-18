@@ -12,13 +12,13 @@ const {
   getEmailApprovalLogs
 } = require("../controllers/emailController");
 
-// Owned endpoints by Person 2
+// AI Email Generation endpoints
 router.post("/generate", generateEmail);
 router.post("/regenerate", regenerateEmail);
 router.post("/edit", editEmail);
 router.get("/pending-approval", getPendingApprovalEmails);
 
-// Approval Queue endpoints for Person 4 (support both POST and PATCH per slide spec)
+// Approval Queue endpoints (support both POST and PATCH per slide spec)
 router.post("/:id/approve", approveEmail);
 router.patch("/:id/approve", approveEmail);
 router.post("/:id/reject", rejectEmail);

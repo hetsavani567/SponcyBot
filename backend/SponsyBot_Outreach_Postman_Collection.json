@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "sponsybot-person3-collection",
-    "name": "SponsyBot - Person 3 Outreach CRM",
-    "description": "Postman testing suite for Person 3: Outreach CRM, Follow-up limits, and Pipeline tracking.",
+    "_postman_id": "sponsybot-outreach-crm-collection",
+    "name": "SponsyBot - Outreach CRM",
+    "description": "Postman testing suite for Outreach CRM, Follow-up limits, and Pipeline tracking.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -172,7 +172,7 @@
       }
     },
     {
-      "name": "10. P4 Webhook Simulation (Sent & Reply Event)",
+      "name": "10. Gmail Webhook Simulation (Sent & Reply Event)",
       "request": {
         "method": "POST",
         "header": [
@@ -190,7 +190,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["outreach", "webhook"]
         },
-        "description": "Simulates Person 4 Gmail integration webhook notifying Person 3 of an incoming reply."
+        "description": "Simulates Gmail integration webhook notifying Outreach CRM of an incoming reply."
       }
     }
   ]

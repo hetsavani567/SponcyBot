@@ -11,6 +11,7 @@ try {
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+mongoose.set("bufferTimeoutMS", 2000);
 
 const llmRoutes = require("./routes/llmRoutes");
 const companyRoutes = require("./routes/companyRoutes");
@@ -19,14 +20,19 @@ const teamMemberRoutes = require("./routes/teamMemberRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const gmailRoutes = require("./routes/gmailRoutes");
 
+const path = require("path");
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "../public")));
 
-app.get("/", (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
-    message: "Sponsy Bot Backend is running"
+    message: "Sponsy Bot Backend is running",
+    status: "healthy",
+    timestamp: new Date()
   });
 });
 
@@ -37,19 +43,19 @@ app.use("/team-members", teamMemberRoutes);
 app.use("/emails", emailRoutes);
 app.use("/gmail", gmailRoutes);
 
+const PORT = process.env.PORT || 5000;
+
 const startServer = async () => {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-
-    console.log("MongoDB connected successfully");
-
-    app.listen(5000, () => {
-      console.log("Server running on http://localhost:5000");
-    });
-  } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
-    process.exit(1);
+  if (process.env.MONGODB_URI) {
+    mongoose
+      .connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
+      .then(() => console.log("MongoDB connected successfully"))
+      .catch((error) => console.warn("MongoDB connection warning:", error.message));
   }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 };
 
 startServer();

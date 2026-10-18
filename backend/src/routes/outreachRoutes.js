@@ -11,14 +11,14 @@ const {
   updateStatusHandler,
   getCommsHistory,
   getDashboardStatsHandler,
-  handleP4Webhook
+  handleGmailWebhook
 } = require("../controllers/outreachController");
 
 // Exact routes first (to prevent :id collision)
 router.get("/pending-followups", getPendingFollowUps);
 router.get("/history", getCommsHistory);
 router.get("/stats", getDashboardStatsHandler);
-router.post("/webhook", handleP4Webhook);
+router.post("/webhook", handleGmailWebhook);
 
 // Collection routes
 router.get("/", getAllOutreach);

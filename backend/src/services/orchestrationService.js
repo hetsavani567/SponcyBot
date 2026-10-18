@@ -25,8 +25,8 @@ const runSimulationFlow = async ({
     stepsLog.push({ step: stepNum, title, owner, details, timestamp: new Date() });
   };
 
-  // ── Step 1 to 5: P1 Sponsor Intelligence ─────────────────────────────────
-  logStep(1, "Add Company", "P1", `Registering sponsor: "${companyName}"`);
+  // ── Step 1 to 5: Sponsor Intelligence ────────────────────────────────────
+  logStep(1, "Add Company", "Research", `Registering sponsor: "${companyName}"`);
   const mockTemplate = mockCompanies[0] || {};
 
   const company = {
@@ -50,12 +50,12 @@ const runSimulationFlow = async ({
     whatToAsk: "5,000 USD in cloud credits and 2,000 USD prize pool",
     shortPitch: "Empower 500+ student builders at NIT Surat with ExampleTech cloud infrastructure."
   };
-  logStep(2, "Research Company", "P1", `Completed research: ${company.research.slice(0, 80)}...`);
-  logStep(3, "Sponsor Scoring", "P1", `Score: ${company.score}/100 (Tier: ${company.recommendedTier})`);
-  logStep(4, "Recommended Tier", "P1", `Tier: ${company.recommendedTier}`);
-  logStep(5, "Recommended Ask", "P1", `Ask: ${company.recommendedAsk} (${company.whatToAsk})`);
+  logStep(2, "Research Company", "Research", `Completed research: ${company.research.slice(0, 80)}...`);
+  logStep(3, "Sponsor Scoring", "Research", `Score: ${company.score}/100 (Tier: ${company.recommendedTier})`);
+  logStep(4, "Recommended Tier", "Research", `Tier: ${company.recommendedTier}`);
+  logStep(5, "Recommended Ask", "Research", `Ask: ${company.recommendedAsk} (${company.whatToAsk})`);
 
-  // ── Step 6: P2 Email Engine generates draft ──────────────────────────────
+  // ── Step 6: Email Engine generates draft ─────────────────────────────────
   const emailDraft = {
     _id: new mongoose.Types.ObjectId(),
     companyId: company._id,
@@ -68,9 +68,9 @@ const runSimulationFlow = async ({
     saveCalls: 0,
     async save() { this.saveCalls++; return this; }
   };
-  logStep(6, "AI Generates Personalised Email", "P2", `Draft created in status "${emailDraft.status}" (Version: ${emailDraft.version})`);
+  logStep(6, "AI Generates Personalised Email", "Email AI", `Draft created in status "${emailDraft.status}" (Version: ${emailDraft.version})`);
 
-  // Create mock team member owner (P3)
+  // Create mock team member owner
   const member = {
     _id: new mongoose.Types.ObjectId(),
     name: "Alex Patel",
@@ -78,7 +78,7 @@ const runSimulationFlow = async ({
     role: "Lead Organizer"
   };
 
-  // Create initial Outreach CRM record (P3)
+  // Create initial Outreach CRM record
   const outreach = {
     _id: new mongoose.Types.ObjectId(),
     companyId: company._id,
@@ -91,8 +91,8 @@ const runSimulationFlow = async ({
     async save() { return this; }
   };
 
-  // ── Step 7: P4 Human Approval ────────────────────────────────────────────
-  logStep(7, "Human Review & Approval", "P4", `Reviewer "${reviewerName}" reviewed and approved email draft.`);
+  // ── Step 7: Human Approval ───────────────────────────────────────────────
+  logStep(7, "Human Review & Approval", "Gmail", `Reviewer "${reviewerName}" reviewed and approved email draft.`);
   emailDraft.status = "APPROVED";
   const approvalLog = {
     _id: new mongoose.Types.ObjectId(),
@@ -104,8 +104,8 @@ const runSimulationFlow = async ({
     decidedAt: new Date()
   };
 
-  // ── Step 8: P4 Gmail Send (Send Guard strictly enforced) ──────────────────
-  logStep(8, "Gmail Sends Email", "P4", `Send Guard verified status === 'APPROVED'. Dispatched via Gmail API.`);
+  // ── Step 8: Gmail Send (Send Guard strictly enforced) ─────────────────────
+  logStep(8, "Gmail Sends Email", "Gmail", `Send Guard verified status === 'APPROVED'. Dispatched via Gmail API.`);
   const sendResult = await sendEmailViaGmail({
     to: contactEmail,
     subject: emailDraft.subject,
@@ -114,31 +114,31 @@ const runSimulationFlow = async ({
   });
   emailDraft.status = "SENT";
 
-  // P3 CRM updated
+  // Outreach CRM updated
   outreach.status = "SENT";
   outreach.threadId = sendResult.threadId;
   const followUpDate = new Date();
   followUpDate.setDate(followUpDate.getDate() + 3);
   outreach.nextFollowUpAt = followUpDate;
-  logStep(9, "Outreach State & Follow-up Scheduled", "P3", `Outreach moved to "SENT". Follow-up 1 scheduled in 3 days (${followUpDate.toISOString().split("T")[0]}).`);
+  logStep(9, "Outreach State & Follow-up Scheduled", "Outreach CRM", `Outreach moved to "SENT". Follow-up 1 scheduled in 3 days (${followUpDate.toISOString().split("T")[0]}).`);
 
-  // ── Step 10 & 11: P4 Reply Received & AI Classified ──────────────────────
+  // ── Step 10 & 11: Reply Received & AI Classified ─────────────────────────
   let outcomeDetails = "";
   if (simulateReply === "INTERESTED") {
     outreach.status = "INTERESTED";
     outreach.nextFollowUpAt = null; // Auto follow-ups stopped on interest
     outcomeDetails = "Sponsor replied: 'Happy to support! Let us schedule a call.' Status -> INTERESTED. Follow-ups halted.";
-    logStep(10, "Reply Detected & Classified", "P4", "AI classified response as 'INTERESTED'. Suggested meeting call.");
-    logStep(11, "Status Updated", "P3", outcomeDetails);
-    logStep(12, "Meeting Scheduled", "P3", "Confirmed meeting call booked for Tuesday 3:00 PM.");
+    logStep(10, "Reply Detected & Classified", "Gmail", "AI classified response as 'INTERESTED'. Suggested meeting call.");
+    logStep(11, "Status Updated", "Outreach CRM", outcomeDetails);
+    logStep(12, "Meeting Scheduled", "Outreach CRM", "Confirmed meeting call booked for Tuesday 3:00 PM.");
   } else {
     outreach.status = "DECLINED";
     outreach.nextFollowUpAt = null;
     outreach.closedReason = "Sponsor declined: budget exhausted";
     outcomeDetails = "Sponsor replied: 'Budget exhausted'. Status -> DECLINED -> CLOSED.";
-    logStep(10, "Reply Detected & Classified", "P4", "AI classified response as 'DECLINED'.");
-    logStep(11, "Status Updated", "P3", outcomeDetails);
-    logStep(12, "Outreach Closed", "P3", "Outreach safely closed without spamming.");
+    logStep(10, "Reply Detected & Classified", "Gmail", "AI classified response as 'DECLINED'.");
+    logStep(11, "Status Updated", "Outreach CRM", outcomeDetails);
+    logStep(12, "Outreach Closed", "Outreach CRM", "Outreach safely closed without spamming.");
   }
 
   return {

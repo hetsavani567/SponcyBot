@@ -9,7 +9,9 @@ const {
   getThreadById,
   getInboxMessages,
   classifyReplyHandler,
-  confirmReplyHandler
+  confirmReplyHandler,
+  getSystemStats,
+  runSimulationHandler
 } = require("../controllers/gmailController");
 const { sendGuard } = require("../middleware/sendGuard");
 
@@ -37,11 +39,11 @@ router.get("/replies", getInboxMessages);
 // AI-assisted reply classification
 router.post("/replies/classify", classifyReplyHandler);
 
-// Human confirms reply label -> updates P3 Outreach CRM
+// Human confirms reply label -> updates Outreach CRM
 router.post("/replies/confirm", confirmReplyHandler);
 
 // ── Phase 5: System Dashboard Stats & End-to-End Walkthrough Runner ─────────
-// Aggregated stats across P1, P2, P3, and P4
+// Aggregated stats across the system
 router.get("/stats", getSystemStats);
 
 // 12-step end-to-end simulation runner for judge demos

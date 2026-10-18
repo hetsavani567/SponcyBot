@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SponsyBot — Sponsor Outreach Engine</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- TOP HEADER -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Title -->
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-lg shadow-sm">
+          ⚡
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-base tracking-tight text-white">SponsyBot</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">Track 2</span>
+          </div>
+          <p class="text-xs text-slate-400 hidden sm:block">Human-in-the-Loop Sponsor Outreach · ACM NIT Surat</p>
+        </div>
+      </div>
+
+      <!-- Center Nav Tabs -->
+      <nav class="hidden md:flex items-center space-x-1 bg-slate-950/70 p-1 rounded-lg border border-slate-800">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn px-3 py-1.5 rounded-md text-xs font-medium text-white bg-slate-800 shadow-sm transition">
+          📊 Dashboard
+        </button>
+        <button onclick="switchTab('sponsors')" id="nav-sponsors" class="tab-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">
+          🏢 Sponsors
+        </button>
+        <button onclick="switchTab('approval')" id="nav-approval" class="tab-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition flex items-center space-x-1.5">
+          <span>🛡️ Approval Queue</span>
+          <span id="badge-pending-count" class="hidden px-1.5 py-0.2 text-[10px] bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40">0</span>
+        </button>
+        <button onclick="switchTab('outreach')" id="nav-outreach" class="tab-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">
+          📈 Outreach CRM
+        </button>
+        <button onclick="switchTab('details')" id="nav-details" class="tab-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">
+          💬 Thread & Details
+        </button>
+      </nav>
+
+      <!-- Right Action Controls -->
+      <div class="flex items-center space-x-3">
+        <!-- Gmail status indicator -->
+        <div id="gmail-status-pill" class="flex items-center space-x-2 text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+          <span class="w-2 h-2 rounded-full bg-slate-500" id="gmail-dot"></span>
+          <span id="gmail-status-text">Checking Gmail...</span>
+        </div>
+
+        <!-- 12-Step Demo Button -->
+        <button onclick="triggerDemoSimulation()" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-500/10 flex items-center space-x-1.5 transition">
+          <span>⚡ Run 12-Step Demo</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Mobile Nav Tabs -->
+    <div class="md:hidden flex overflow-x-auto border-t border-slate-800 px-4 py-2 space-x-2 bg-slate-950">
+      <button onclick="switchTab('dashboard')" class="text-xs px-3 py-1 rounded bg-slate-800 text-white">Dashboard</button>
+      <button onclick="switchTab('sponsors')" class="text-xs px-3 py-1 rounded text-slate-400">Sponsors</button>
+      <button onclick="switchTab('approval')" class="text-xs px-3 py-1 rounded text-slate-400">Approval</button>
+      <button onclick="switchTab('outreach')" class="text-xs px-3 py-1 rounded text-slate-400">Outreach</button>
+      <button onclick="switchTab('details')" class="text-xs px-3 py-1 rounded text-slate-400">Details</button>
+    </div>
+  </header>
+
+  <!-- MAIN VIEW CONTAINER -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <!-- SCREEN 1: DASHBOARD -->
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <section id="view-dashboard" class="space-y-6">
+      
+      <!-- Welcome & Golden Rule Banner -->
+      <div class="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 class="text-lg font-bold text-white flex items-center space-x-2">
+            <span>SponsyBot Overview</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-normal">Active Backend</span>
+          </h1>
+          <p class="text-xs text-slate-400 mt-1">
+            <strong class="text-slate-300">Golden Rule:</strong> AI generates draft &rarr; Human reviews &rarr; Human approves &rarr; Gmail sends it.
+            <span class="text-emerald-400">Send Guard prevents any unapproved sends.</span>
+          </p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="fetchDashboardStats()" class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition">
+            🔄 Refresh Stats
+          </button>
+          <a href="/gmail/oauth/start" target="_blank" class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition shadow-sm">
+            🔗 Connect Gmail
+          </a>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <!-- Total Sponsors -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <p class="text-xs text-slate-400 font-medium">Total Sponsors</p>
+          <p class="text-2xl font-bold text-white mt-1" id="stat-total-sponsors">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Research Engine</p>
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-amber-500/30 relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-2 h-2 rounded-full bg-amber-400 m-2 animate-ping"></div>
+          <p class="text-xs text-amber-400 font-medium">Pending Approval</p>
+          <p class="text-2xl font-bold text-amber-300 mt-1" id="stat-pending-approvals">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Needs Human Review</p>
+        </div>
+
+        <!-- Total Sent -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <p class="text-xs text-slate-400 font-medium">Emails Sent</p>
+          <p class="text-2xl font-bold text-emerald-400 mt-1" id="stat-emails-sent">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Via Gmail API</p>
+        </div>
+
+        <!-- Active Outreaches -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <p class="text-xs text-slate-400 font-medium">Outreach CRM</p>
+          <p class="text-2xl font-bold text-white mt-1" id="stat-total-outreach">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Tracked sponsors</p>
+        </div>
+
+        <!-- Follow-ups Due -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <p class="text-xs text-slate-400 font-medium">Follow-ups Due</p>
+          <p class="text-2xl font-bold text-blue-400 mt-1" id="stat-followups-due">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Scheduled in CRM</p>
+        </div>
+
+        <!-- Conversions / Meetings -->
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <p class="text-xs text-slate-400 font-medium">Interested / Meetings</p>
+          <p class="text-2xl font-bold text-purple-400 mt-1" id="stat-meetings">-</p>
+          <p class="text-[11px] text-slate-500 mt-1">Positive responses</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Review drafts card -->
+        <div class="p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-amber-400 font-semibold text-sm">
+              <span>🛡️ Approval Queue</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">
+              Inspect AI drafts generated by the AI Email engine. Edit, regenerate, approve, or reject. Only approved emails can be sent.
+            </p>
+          </div>
+          <button onclick="switchTab('approval')" class="mt-4 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white rounded-lg transition text-center">
+            Open Approval Queue &rarr;
+          </button>
+        </div>
+
+        <!-- Sponsors card -->
+        <div class="p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-emerald-400 font-semibold text-sm">
+              <span>🏢 Sponsor Intelligence</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">
+              Browse ranked sponsors from the Research Engine, inspect fit scores, recommended tier & asks (money, goodies, infra).
+            </p>
+          </div>
+          <button onclick="switchTab('sponsors')" class="mt-4 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white rounded-lg transition text-center">
+            Explore Sponsors &rarr;
+          </button>
+        </div>
+
+        <!-- Follow-up scheduler card -->
+        <div class="p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-blue-400 font-semibold text-sm">
+              <span>📅 Outreach & Follow-ups</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">
+              Monitor sponsor communication history. Maximum 2 follow-ups strictly enforced by Outreach state machine.
+            </p>
+          </div>
+          <button onclick="switchTab('outreach')" class="mt-4 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white rounded-lg transition text-center">
+            View Active Outreaches &rarr;
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <!-- SCREEN 2: SPONSORS (Ranked List & Add) -->
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <section id="view-sponsors" class="space-y-4 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base font-bold text-white">Sponsor Directory & Rankings</h2>
+          <p class="text-xs text-slate-400">Powered by Sponsor Intelligence & Research Engine</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="openAddSponsorModal()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs text-white rounded-lg font-medium transition shadow-sm">
+            + Add Sponsor Company
+          </button>
+          <button onclick="loadSponsors()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700 transition">
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Sponsors Table Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Company</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4">Fit Score</th>
+                <th class="py-3 px-4">Recommended Tier</th>
+                <th class="py-3 px-4">Ask</th>
+                <th class="py-3 px-4">Contact</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sponsors-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-slate-500">Loading sponsors...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <!-- SCREEN 3: APPROVAL QUEUE (Human-in-the-Loop Guard) -->
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <section id="view-approval" class="space-y-4 hidden">
+      
+      <!-- Guard Reminder Banner -->
+      <div class="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200">
+        <div class="flex items-center space-x-2">
+          <span class="text-base">🛡️</span>
+          <span><strong>Human-in-the-Loop Send Guard Active:</strong> Any email in <code>DRAFT</code> or <code>PENDING_APPROVAL</code> is strictly blocked from Gmail. Only approved drafts can be sent.</span>
+        </div>
+        <button onclick="loadPendingEmails()" class="text-xs text-amber-300 hover:underline">Refresh Queue</button>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <!-- Drafts List (Left) -->
+        <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Drafts Queue</h3>
+            <span id="queue-count-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">0 emails</span>
+          </div>
+          <div id="drafts-list" class="space-y-2 max-h-[550px] overflow-y-auto pr-1">
+            <div class="text-xs text-slate-500 text-center py-8">Loading email drafts...</div>
+          </div>
+        </div>
+
+        <!-- Draft Reviewer & Actions (Right) -->
+        <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between min-h-[550px]" id="email-detail-container">
+          <div class="flex items-center justify-center h-full text-slate-500 text-xs py-24">
+            Select an email draft from the left to inspect, edit, or approve.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <!-- SCREEN 4: OUTREACH CRM & FOLLOW-UPS -->
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <section id="view-outreach" class="space-y-4 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base font-bold text-white">Outreach CRM & Follow-Up Tracker</h2>
+          <p class="text-xs text-slate-400">State machine enforcing max 2 follow-ups · Automated Outreach Engine</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="loadOutreachList('due')" class="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs rounded-lg border border-amber-500/30 transition">
+            ⏰ Due Follow-ups Only
+          </button>
+          <button onclick="loadOutreachList('all')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700 transition">
+            All Records
+          </button>
+        </div>
+      </div>
+
+      <!-- Outreach Table Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Company</th>
+                <th class="py-3 px-4">Owner (Team Member)</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Follow-ups</th>
+                <th class="py-3 px-4">Next Scheduled</th>
+                <th class="py-3 px-4">Last Contact</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="outreach-table-body" class="divide-y divide-slate-800">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-slate-500">Loading outreach records...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <!-- SCREEN 5: SPONSOR DETAILS & GMAIL THREAD VIEWER -->
+    <!-- ───────────────────────────────────────────────────────────────── -->
+    <section id="view-details" class="space-y-5 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center space-x-2">
+            <span id="detail-company-title">Sponsor Deep Dive</span>
+            <span id="detail-tier-badge" class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">-</span>
+          </h2>
+          <p class="text-xs text-slate-400" id="detail-company-sub">Select a company from the Sponsors or Outreach screen</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <input type="text" id="manual-thread-id" placeholder="Thread ID (e.g. thread_123)" class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200">
+          <button onclick="loadThreadByInput()" class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition border border-slate-700">
+            Load Thread
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        <!-- Left: Company Intelligence & Scores -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Research Summary</h3>
+            <p class="text-xs text-slate-300 leading-relaxed" id="detail-research-text">
+              No sponsor selected.
+            </p>
+            <div class="pt-2 border-t border-slate-800/60">
+              <span class="text-[11px] text-slate-400">Strategic Angle:</span>
+              <p class="text-xs text-emerald-400 font-medium mt-0.5" id="detail-strategy-text">-</p>
+            </div>
+            <div class="pt-2 border-t border-slate-800/60">
+              <span class="text-[11px] text-slate-400">Recommended Ask:</span>
+              <p class="text-xs text-slate-200 font-medium mt-0.5" id="detail-ask-text">-</p>
+            </div>
+          </div>
+
+          <!-- Score Breakdown Card -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">6-Factor Score Breakdown</h3>
+            <div class="space-y-2 text-xs" id="detail-scores-container">
+              <div class="flex justify-between text-slate-400"><span>Event Fit (max 25)</span><span id="score-eventFit" class="text-white font-mono">-</span></div>
+              <div class="flex justify-between text-slate-400"><span>Sponsorship Evidence (max 20)</span><span id="score-sponsorshipEvidence" class="text-white font-mono">-</span></div>
+              <div class="flex justify-between text-slate-400"><span>Education/Community Fit (max 15)</span><span id="score-educationCommunityFit" class="text-white font-mono">-</span></div>
+              <div class="flex justify-between text-slate-400"><span>Product Relevance (max 15)</span><span id="score-productRelevance" class="text-white font-mono">-</span></div>
+              <div class="flex justify-between text-slate-400"><span>Audience Fit (max 15)</span><span id="score-audienceFit" class="text-white font-mono">-</span></div>
+              <div class="flex justify-between text-slate-400"><span>Sponsorship Potential (max 10)</span><span id="score-sponsorshipPotential" class="text-white font-mono">-</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Live Gmail Thread Viewer & AI Classification -->
+        <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Gmail Conversation Thread</h3>
+            <span class="text-[11px] text-slate-500 font-mono" id="thread-id-display">No thread selected</span>
+          </div>
+
+          <!-- AI Sentiment Suggestion Banner -->
+          <div id="ai-suggestion-box" class="hidden p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="text-base">🤖</span>
+                <span class="text-xs font-semibold text-emerald-400">AI Suggested Reply Outcome:</span>
+                <span id="ai-suggested-label-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">INTERESTED</span>
+              </div>
+              <span id="ai-confidence-badge" class="text-[10px] text-slate-400">Confidence: HIGH</span>
+            </div>
+            <p class="text-xs text-slate-300" id="ai-reason-text">Sponsor requested a 15-minute call to explore gold tier.</p>
+            
+            <!-- Human Confirm Buttons -->
+            <div class="flex items-center space-x-2 pt-1">
+              <button onclick="confirmOutcome('INTERESTED')" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-medium transition">
+                ✓ Confirm: Interested & Book Meeting
+              </button>
+              <button onclick="confirmOutcome('DECLINED')" class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-medium transition">
+                ✕ Confirm: Declined (Close)
+              </button>
+            </div>
+          </div>
+
+          <!-- Thread Chat Bubbles -->
+          <div id="thread-messages-list" class="space-y-3 min-h-[300px] max-h-[450px] overflow-y-auto p-1">
+            <div class="text-xs text-slate-500 text-center py-16">No conversation messages to display.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ADD SPONSOR MODAL -->
+  <div id="modal-add-sponsor" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-white">Add New Sponsor</h3>
+        <button onclick="closeAddSponsorModal()" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <form id="form-add-sponsor" onsubmit="submitAddSponsor(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-300 mb-1">Company Name *</label>
+          <input type="text" name="name" required placeholder="e.g. Supabase Inc" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white">
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">Website</label>
+          <input type="url" name="website" placeholder="https://supabase.com" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white">
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">Category</label>
+          <select name="category" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white">
+            <option value="Technology">Technology</option>
+            <option value="Cloud & Developer Tools" selected>Cloud & Developer Tools</option>
+            <option value="AI & Data">AI & Data</option>
+            <option value="Finance">Finance</option>
+            <option value="Education">Education</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">Contact Email</label>
+          <input type="email" name="contactEmail" placeholder="sponsorships@supabase.com" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white">
+        </div>
+        <div class="flex justify-end space-x-2 pt-2">
+          <button type="button" onclick="closeAddSponsorModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg">Cancel</button>
+          <button type="submit" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium">Save Sponsor</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 12-STEP SIMULATION WALKTHROUGH MODAL -->
+  <div id="modal-demo" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-2">
+          <span class="text-xl">⚡</span>
+          <div>
+            <h3 class="text-base font-bold text-white">SponcyBot 12-Step Lifecycle Simulation</h3>
+            <p class="text-xs text-slate-400">Complete end-to-end autonomous sponsorship workflow</p>
+          </div>
+        </div>
+        <button onclick="closeDemoModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+
+      <div id="demo-steps-container" class="space-y-3 overflow-y-auto flex-1 pr-1 text-xs">
+        <p class="text-slate-400 text-center py-10">Running end-to-end simulation...</p>
+      </div>
+
+      <div class="flex justify-end border-t border-slate-800 pt-3">
+        <button onclick="closeDemoModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold text-xs rounded-lg transition">
+          Close & Return to Dashboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 transform transition-all duration-300 translate-y-20 opacity-0 bg-slate-900 border border-slate-700 text-white text-xs px-4 py-3 rounded-xl shadow-xl flex items-center space-x-2">
+    <span id="toast-icon">ℹ️</span>
+    <span id="toast-message">Message</span>
+  </div>
+
+  <!-- MAIN SCRIPT -->
+  <script src="/app.js"></script>
+</body>
+</html>

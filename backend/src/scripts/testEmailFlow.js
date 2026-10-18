@@ -13,7 +13,7 @@ const {
 const mockCompanies = require("../mocks/companies.json");
 
 async function runEndToEndTest() {
-  console.log("=== PERSON 2 AI EMAIL ENGINE END-TO-END TEST ===\n");
+  console.log("=== AI EMAIL ENGINE END-TO-END TEST ===\n");
 
   try {
     console.log("1. Connecting to Database...");
