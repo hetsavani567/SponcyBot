@@ -60,8 +60,6 @@ function buildEmailPrompt(company, options = {}) {
     previousSubject = "",
     previousBody = "",
     isRegeneration = false,
-    organizerName = process.env.ORGANIZER_NAME || "Mahathi K.",
-    organizerRole = process.env.ORGANIZER_ROLE || "Lead, Sponsorships & Partnerships",
     organizerOrg = process.env.ORGANIZER_ORG || "ACM NIT Surat",
     organizerEmail = process.env.ORGANIZER_EMAIL || "partnerships@sponsybot.com",
     calendarLink = process.env.CALENDAR_URL || "https://cal.com/sponsy-hackathon",
@@ -122,7 +120,7 @@ function buildEmailPrompt(company, options = {}) {
   const strategy = company.strategy || "";
   const whatToAsk = company.whatToAsk || "";
 
-  const signOff = `Best regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}\n${organizerEmail}`;
+  const signOff = `Best regards,\n${organizerOrg}`;
   const wordLimit = WORD_LIMITS[type] || WORD_LIMITS.initial;
 
   let taskObjective = "";
@@ -216,7 +214,7 @@ ${structureRule}
 5. LOW-FRICTION CTA: Offer the options above, with the call and the deck link each appearing once.
 6. REAL REASON TO ACT NOW: State that ${urgency}.
 7. WORD COUNT: Keep the email body ${wordLimit}, clean and skimmable.
-8. ABSOLUTELY NO PLACEHOLDERS: Never output [Your Name] or [Link]. End the body with this exact sign-off, using line breaks:
+8. ABSOLUTELY NO PLACEHOLDERS OR PERSONAL NAMES: Never output [Your Name] or [Link]. Do NOT include any individual's personal name. End the body with this exact institutional sign-off, using line breaks:
 ${signOff}
 9. Return ONLY valid raw JSON with no markdown code fences:
 {
