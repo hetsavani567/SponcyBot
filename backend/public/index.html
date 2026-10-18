@@ -103,6 +103,21 @@
   <!-- MAIN VIEW CONTAINER -->
   <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
 
+    <!-- Global Backend Connection / Offline Warning Banner -->
+    <div id="backend-connection-banner" class="hidden mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+      <div class="flex items-start sm:items-center space-x-3">
+        <span class="text-xl">⚠️</span>
+        <div>
+          <strong class="font-semibold text-white">Backend Connection Notice:</strong>
+          <span id="backend-banner-message" class="text-amber-300">Communicating with backend API...</span>
+          <p class="text-[11px] text-slate-400 mt-0.5">If deployed on Render/Vercel, check that your server is running, Root Directory is set to <code class="bg-slate-900 px-1 py-0.5 rounded text-amber-200">backend</code>, and <code class="bg-slate-900 px-1 py-0.5 rounded text-amber-200">MONGODB_URI</code> is added in the cloud dashboard.</p>
+        </div>
+      </div>
+      <button onclick="fetchDashboardStats(); checkGmailStatus();" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition whitespace-nowrap text-xs shadow">
+        Retry Connection
+      </button>
+    </div>
+
     <!-- ───────────────────────────────────────────────────────────────── -->
     <!-- SCREEN 1: DASHBOARD -->
     <!-- ───────────────────────────────────────────────────────────────── -->

@@ -9,6 +9,63 @@ let activeEmailsCache = [];
 let companiesCache = [];
 let teamMembersCache = [];
 
+// ─── Resilient API Requester (Prevents Unexpected token 'T' crashes) ────────
+async function safeFetchJson(url, options = {}) {
+  // Support custom backend base URL if frontend is deployed separately
+  const baseUrl = window.API_BASE_URL || localStorage.getItem('SPONCY_API_BASE_URL') || '';
+  const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
+
+  let res;
+  try {
+    res = await fetch(fullUrl, options);
+  } catch (networkErr) {
+    updateBackendBanner(false, `Network connection error: Unable to reach backend at ${fullUrl}`);
+    throw new Error(`Cannot connect to backend server: ${networkErr.message}. Ensure backend is running.`);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const rawText = await res.text();
+    const cleanSnippet = rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+
+    let diagnosticMsg;
+    if (res.status === 404) {
+      diagnosticMsg = `Route not found (HTTP 404): "${url}". If deployed, verify your Backend Root Directory and routes.`;
+    } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+      diagnosticMsg = `Backend unavailable (HTTP ${res.status}): Server is starting up or crashed. Verify MONGODB_URI and cloud logs.`;
+    } else {
+      diagnosticMsg = `Server returned HTML (${res.status}): "${cleanSnippet || 'The page could not be displayed'}". Expected JSON.`;
+    }
+
+    updateBackendBanner(false, diagnosticMsg);
+    throw new Error(diagnosticMsg);
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (parseErr) {
+    updateBackendBanner(false, `Malformed JSON received from ${url}: ${parseErr.message}`);
+    throw new Error(`Failed to parse JSON from ${url}: ${parseErr.message}`);
+  }
+
+  updateBackendBanner(true);
+  return { res, data };
+}
+
+function updateBackendBanner(isHealthy, message = '') {
+  const banner = document.getElementById('backend-connection-banner');
+  const msgEl = document.getElementById('backend-banner-message');
+  if (!banner) return;
+
+  if (isHealthy) {
+    banner.classList.add('hidden');
+  } else {
+    banner.classList.remove('hidden');
+    if (msgEl && message) msgEl.innerText = message;
+  }
+}
+
 // ─── Lifecycle Initialization ───────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   handleUrlQueryParams();
@@ -83,8 +140,7 @@ function switchTab(tab) {
 // ─── Gmail OAuth & Demo Auth Management ─────────────────────────────────────
 async function checkGmailStatus() {
   try {
-    const res = await fetch('/gmail/oauth/status');
-    const data = await res.json();
+    const { data } = await safeFetchJson('/gmail/oauth/status');
     const dot = document.getElementById('gmail-dot');
     const text = document.getElementById('gmail-status-text');
 
@@ -124,7 +180,7 @@ async function checkGmailStatus() {
 
     return data.data;
   } catch (err) {
-    console.warn('Gmail status check failed:', err);
+    console.warn('Gmail status check failed:', err.message);
   }
 }
 
@@ -140,12 +196,11 @@ function closeGmailModal() {
 async function connectDemoAccountViaUI() {
   showToast('Connecting demo organizer mailbox...', 'info');
   try {
-    const res = await fetch('/gmail/oauth/demo-connect', {
+    const { res, data } = await safeFetchJson('/gmail/oauth/demo-connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'sponsorships@hackathon.club' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('1-Click Demo Account Connected! Zero Google Cloud setup needed.', 'success');
       await checkGmailStatus();
@@ -160,8 +215,7 @@ async function connectDemoAccountViaUI() {
 
 async function disconnectGmailViaUI() {
   try {
-    const res = await fetch('/gmail/oauth/disconnect', { method: 'POST' });
-    const data = await res.json();
+    const { res, data } = await safeFetchJson('/gmail/oauth/disconnect', { method: 'POST' });
     if (res.ok) {
       showToast('Gmail account disconnected.', 'info');
       await checkGmailStatus();
@@ -176,8 +230,7 @@ async function disconnectGmailViaUI() {
 // ─── Dashboard Stats ────────────────────────────────────────────────────────
 async function fetchDashboardStats() {
   try {
-    const res = await fetch('/gmail/stats');
-    const resData = await res.json();
+    const { data: resData } = await safeFetchJson('/gmail/stats');
     if (resData.success && resData.data) {
       const d = resData.data;
       document.getElementById('stat-total-sponsors').innerText = d.sponsors?.total ?? 0;
@@ -197,7 +250,7 @@ async function fetchDashboardStats() {
       }
     }
   } catch (err) {
-    console.error('Failed to load stats:', err);
+    console.error('Failed to load stats:', err.message);
   }
 }
 
@@ -207,9 +260,14 @@ async function loadSponsors() {
   tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-500">Loading sponsors...</td></tr>';
 
   try {
-    let res = await fetch('/companies/rank');
-    if (!res.ok) res = await fetch('/companies');
-    const companies = await res.json();
+    let companies;
+    try {
+      const result = await safeFetchJson('/companies/rank');
+      companies = result.data;
+    } catch (e) {
+      const fallback = await safeFetchJson('/companies');
+      companies = fallback.data;
+    }
 
     companiesCache = Array.isArray(companies) ? companies : [];
 
@@ -307,12 +365,11 @@ async function submitAddSponsor(e) {
   showToast(`Adding and researching sponsor '${payload.name}'...`, 'info');
 
   try {
-    const res = await fetch('/companies', {
+    const { res, data } = await safeFetchJson('/companies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Sponsor '${payload.name}' added with score ${data.score || 0}/100!`, 'success');
       closeAddSponsorModal();
@@ -334,12 +391,11 @@ async function submitAddSponsor(e) {
 async function triggerCompanyResearch(companyId) {
   showToast('Researching sponsor with Tavily search + Gemini analysis...', 'info');
   try {
-    const res = await fetch('/companies/research', {
+    const { res, data } = await safeFetchJson('/companies/research', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId })
     });
-    const data = await res.json();
     if (res.ok) {
       const tier = data.recommendedTier || 'Silver';
       const score = data.score || 0;
@@ -357,8 +413,7 @@ async function triggerCompanyResearch(companyId) {
 async function deleteSponsorCompany(companyId, name) {
   if (!confirm(`Are you sure you want to remove '${name}' from sponsors?`)) return;
   try {
-    const res = await fetch(`/companies/${companyId}`, { method: 'DELETE' });
-    const data = await res.json();
+    const { res, data } = await safeFetchJson(`/companies/${companyId}`, { method: 'DELETE' });
     if (res.ok) {
       showToast(`Removed '${name}'`, 'info');
       loadSponsors();
@@ -374,12 +429,11 @@ async function deleteSponsorCompany(companyId, name) {
 async function triggerDraftGeneration(companyId) {
   showToast('Generating personalized AI draft...', 'info');
   try {
-    const res = await fetch('/emails/generate', {
+    const { res, data } = await safeFetchJson('/emails/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('Draft generated in PENDING_APPROVAL status!', 'success');
       switchTab('approval');
@@ -397,8 +451,7 @@ async function loadPendingEmails() {
   container.innerHTML = '<div class="text-xs text-slate-500 text-center py-6">Loading drafts...</div>';
 
   try {
-    const res = await fetch('/emails');
-    const data = await res.json();
+    const { data } = await safeFetchJson('/emails');
     const emails = data.data?.emails || (Array.isArray(data) ? data : []);
     activeEmailsCache = emails;
 
@@ -461,8 +514,7 @@ async function selectEmail(emailId) {
   // Fetch approval history
   let historyLogs = [];
   try {
-    const histRes = await fetch(`/emails/${emailId}/approval-history`);
-    const histData = await histRes.json();
+    const { data: histData } = await safeFetchJson(`/emails/${emailId}/approval-history`);
     if (histData.success) historyLogs = histData.data || [];
   } catch (e) {}
 
@@ -559,12 +611,11 @@ async function selectEmail(emailId) {
 async function approveEmailDraft(emailId) {
   const reviewer = prompt('Reviewer Name (or press OK for default):', 'Partnerships Director') || 'Partnerships Director';
   try {
-    const res = await fetch(`/emails/${emailId}/approve`, {
+    const { res, data } = await safeFetchJson(`/emails/${emailId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewerName: reviewer, notes: 'Verified tier, ask, and value proposition.' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('Email approved! Send Guard now permits outbound send.', 'success');
       loadPendingEmails();
@@ -582,12 +633,11 @@ async function rejectEmailDraft(emailId) {
   if (!reason) return;
 
   try {
-    const res = await fetch(`/emails/${emailId}/reject`, {
+    const { res, data } = await safeFetchJson(`/emails/${emailId}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewerName: 'Partnerships Lead', reason })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('Draft rejected and moved back to DRAFT for rewrite loop.', 'warning');
       loadPendingEmails();
@@ -605,12 +655,11 @@ async function saveEditAsVersion(emailId) {
   const body = document.getElementById('edit-body').value;
 
   try {
-    const res = await fetch('/emails/edit', {
+    const { res, data } = await safeFetchJson('/emails/edit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ emailId, subject, body, notes: 'Human review adjustments' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('New version saved successfully!', 'success');
       loadPendingEmails();
@@ -625,12 +674,11 @@ async function saveEditAsVersion(emailId) {
 async function regenerateDraft(emailId) {
   showToast('Regenerating new draft with dynamic prompt angle...', 'info');
   try {
-    const res = await fetch('/emails/regenerate', {
+    const { res, data } = await safeFetchJson('/emails/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ emailId, customInstructions: 'Emphasize student builder community and resume books' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('New draft version created!', 'success');
       loadPendingEmails();
@@ -649,12 +697,11 @@ async function sendApprovedEmail(emailId) {
   showToast('Send Guard checking status === APPROVED before dispatch...', 'info');
 
   try {
-    const res = await fetch('/gmail/send', {
+    const { res, data } = await safeFetchJson('/gmail/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ emailId, to })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Email dispatched via Gmail! Thread ID: ${data.data?.threadId}`, 'success');
       loadPendingEmails();
@@ -674,8 +721,7 @@ async function loadOutreachList(mode = 'all') {
 
   try {
     const url = mode === 'due' ? '/outreach/pending-followups' : '/outreach';
-    const res = await fetch(url);
-    const data = await res.json();
+    const { data } = await safeFetchJson(url);
     const list = mode === 'due' ? (data.pendingFollowUps || []) : (Array.isArray(data) ? data : []);
 
     if (list.length === 0) {
@@ -760,12 +806,11 @@ async function loadOutreachList(mode = 'all') {
 
 async function registerFollowUp(outreachId) {
   try {
-    const res = await fetch(`/outreach/${outreachId}/followup`, {
+    const { res, data } = await safeFetchJson(`/outreach/${outreachId}/followup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes: 'Follow-up registered via CRM' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(data.message, 'success');
       loadOutreachList('all');
@@ -784,12 +829,11 @@ async function changeOutreachStatus(outreachId) {
   if (!newStatus || !allowed.includes(newStatus)) return;
 
   try {
-    const res = await fetch(`/outreach/${outreachId}/status`, {
+    const { res, data } = await safeFetchJson(`/outreach/${outreachId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus, reason: 'Manual status update via dashboard' })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Status updated to ${newStatus}`, 'success');
       loadOutreachList('all');
@@ -805,12 +849,11 @@ async function changeOutreachStatus(outreachId) {
 async function closeOutreachPrompt(outreachId) {
   const reason = prompt('Reason for closing outreach:', 'Unresponsive after max follow-ups') || 'Closed by organizer';
   try {
-    const res = await fetch(`/outreach/${outreachId}/close`, {
+    const { res, data } = await safeFetchJson(`/outreach/${outreachId}/close`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast('Outreach closed successfully.', 'info');
       loadOutreachList('all');
@@ -826,8 +869,7 @@ async function closeOutreachPrompt(outreachId) {
 async function pollInboxReplies() {
   showToast('Polling inbox messages...', 'info');
   try {
-    const res = await fetch('/gmail/messages?mock=true');
-    const data = await res.json();
+    const { res, data } = await safeFetchJson('/gmail/messages?mock=true');
     if (res.ok) {
       showToast(`Inbox poll complete: ${data.count || 0} messages tracked.`, 'success');
       fetchDashboardStats();
@@ -854,9 +896,11 @@ async function openAssignOutreachModal(preselectedCompanyId = null) {
 
   try {
     // 1. Load companies
-    let compRes = await fetch('/companies');
-    let companies = await compRes.json();
-    if (!Array.isArray(companies)) companies = [];
+    let companies = [];
+    try {
+      const compRes = await safeFetchJson('/companies');
+      companies = Array.isArray(compRes.data) ? compRes.data : [];
+    } catch (e) {}
     companiesCache = companies;
 
     compSelect.innerHTML = companies.map(c => `
@@ -866,9 +910,12 @@ async function openAssignOutreachModal(preselectedCompanyId = null) {
     `).join('');
 
     // 2. Load team members
-    let memberRes = await fetch('/team-members');
-    let members = await memberRes.json();
-    teamMembersCache = Array.isArray(members) ? members : [];
+    let members = [];
+    try {
+      const memberRes = await safeFetchJson('/team-members');
+      members = Array.isArray(memberRes.data) ? memberRes.data : [];
+    } catch (e) {}
+    teamMembersCache = members;
 
     if (teamMembersCache.length === 0) {
       memberSelect.innerHTML = '<option value="">No team members yet. Click "+ New Member" to add one.</option>';
@@ -900,12 +947,11 @@ async function submitAssignOutreach(e) {
   const warningMsg = document.getElementById('assign-duplicate-message');
 
   try {
-    const res = await fetch('/outreach', {
+    const { res, data } = await safeFetchJson('/outreach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
 
     if (res.status === 409) {
       // DUPLICATE OUTREACH PREVENTED!
@@ -949,12 +995,11 @@ async function submitAddMember(e) {
   };
 
   try {
-    const res = await fetch('/team-members', {
+    const { res, data } = await safeFetchJson('/team-members', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Team member '${payload.name}' added!`, 'success');
       closeAddMemberModal();
@@ -979,8 +1024,7 @@ async function viewOutreachTimeline(outreachId, companyName = 'Sponsor') {
   container.innerHTML = '<p class="text-slate-500 text-center py-8">Loading audit trail...</p>';
 
   try {
-    const res = await fetch(`/outreach/${outreachId}`);
-    const data = await res.json();
+    const { data } = await safeFetchJson(`/outreach/${outreachId}`);
     const events = data.timeline || [];
 
     if (events.length === 0) {
@@ -1055,7 +1099,7 @@ async function runSimulateReplyClassification() {
   showToast('Analyzing sponsor reply sentiment with AI...', 'info');
 
   try {
-    const res = await fetch('/gmail/replies/classify', {
+    const { res, data } = await safeFetchJson('/gmail/replies/classify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1064,7 +1108,6 @@ async function runSimulateReplyClassification() {
         threadId: currentSimulateTarget.threadId
       })
     });
-    const data = await res.json();
     if (res.ok && data.data) {
       const cls = data.data;
       currentSimulateTarget.suggestedLabel = cls.suggestedLabel;
@@ -1101,7 +1144,7 @@ async function confirmSimulatedOutcome() {
   showToast(`Confirming reply outcome: ${label}...`, 'info');
 
   try {
-    const res = await fetch('/gmail/replies/confirm', {
+    const { res, data } = await safeFetchJson('/gmail/replies/confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1112,7 +1155,6 @@ async function confirmSimulatedOutcome() {
         notes: `Simulated inbound sponsor reply confirmed as ${label}`
       })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Outcome confirmed! Outreach status updated to ${label}.`, 'success');
       closeSimulateReplyModal();
@@ -1132,8 +1174,7 @@ async function viewSponsorDeepDive(companyId) {
   switchTab('details');
 
   try {
-    const res = await fetch(`/companies/${companyId}`);
-    const data = await res.json();
+    const { data } = await safeFetchJson(`/companies/${companyId}`);
     const company = data.company || data;
 
     const tier = company.recommendedTier || 'Bronze';
@@ -1164,8 +1205,12 @@ async function viewSponsorDeepDive(companyId) {
     document.getElementById('score-sponsorshipPotential').innerText = `${company.sponsorshipPotential || 0}/10`;
 
     // Try finding associated outreach thread
-    const outRes = await fetch(`/outreach?companyId=${companyId}`);
-    const outList = await outRes.json();
+    let outList = [];
+    try {
+      const outRes = await safeFetchJson(`/outreach?companyId=${companyId}`);
+      outList = Array.isArray(outRes.data) ? outRes.data : [];
+    } catch (e) {}
+
     if (Array.isArray(outList) && outList[0] && outList[0].threadId) {
       openThread(outList[0].threadId);
     } else {
@@ -1186,12 +1231,11 @@ async function reResearchCurrentCompany() {
   }
   showToast('Refreshing sponsor AI research...', 'info');
   try {
-    const res = await fetch('/companies/research', {
+    const { res, data } = await safeFetchJson('/companies/research', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId: currentCompanyId })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Research updated! Score: ${data.score || 0}/100 · Tier: ${data.recommendedTier || 'Silver'}`, 'success');
       viewSponsorDeepDive(currentCompanyId);
@@ -1219,8 +1263,7 @@ async function openThread(threadId) {
   container.innerHTML = '<div class="text-xs text-slate-500 text-center py-10">Fetching thread from Gmail API...</div>';
 
   try {
-    const res = await fetch(`/gmail/thread/${threadId}?mock=true`);
-    const data = await res.json();
+    const { data } = await safeFetchJson(`/gmail/thread/${threadId}?mock=true`);
     const thread = data.data?.thread;
 
     if (!thread || !thread.messages || thread.messages.length === 0) {
@@ -1262,7 +1305,7 @@ async function openThread(threadId) {
 async function confirmOutcome(label) {
   if (!currentThreadId) return;
   try {
-    const res = await fetch('/gmail/replies/confirm', {
+    const { res, data } = await safeFetchJson('/gmail/replies/confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1272,7 +1315,6 @@ async function confirmOutcome(label) {
         notes: `Human confirmed outcome: ${label}`
       })
     });
-    const data = await res.json();
     if (res.ok) {
       showToast(`Reply outcome '${label}' confirmed! Outreach CRM updated.`, 'success');
       document.getElementById('ai-suggestion-box').classList.add('hidden');
@@ -1293,7 +1335,7 @@ async function triggerDemoSimulation() {
   container.innerHTML = '<div class="py-12 text-center text-slate-400 text-xs animate-pulse">Running live 12-step SponcyBot lifecycle simulation...</div>';
 
   try {
-    const res = await fetch('/gmail/demo/simulate-flow', {
+    const { res, data } = await safeFetchJson('/gmail/demo/simulate-flow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1302,7 +1344,6 @@ async function triggerDemoSimulation() {
         simulateReply: 'INTERESTED'
       })
     });
-    const data = await res.json();
 
     if (res.ok && data.data && data.data.timeline) {
       const steps = data.data.timeline;
@@ -1341,3 +1382,4 @@ async function triggerDemoSimulation() {
 function closeDemoModal() {
   document.getElementById('modal-demo').classList.add('hidden');
 }
+
