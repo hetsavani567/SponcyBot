@@ -1,18 +1,19 @@
 
 require("dotenv").config();
 
-const dns = require("dns");
-
-try {
-  dns.setServers(["8.8.8.8", "1.1.1.1"]);
-} catch (e) {}
+if (process.env.USE_CUSTOM_DNS === "true") {
+  const dns = require("dns");
+  try {
+    dns.setServers(["8.8.8.8", "1.1.1.1"]);
+  } catch (e) {}
+}
 
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const path = require("path");
 
-mongoose.set("bufferTimeoutMS", 2000);
+mongoose.set("bufferTimeoutMS", 10000);
 
 const llmRoutes = require("./routes/llmRoutes");
 const companyRoutes = require("./routes/companyRoutes");
