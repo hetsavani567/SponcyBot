@@ -20,7 +20,8 @@ async function generate(prompt, options = {}) {
         contents: prompt,
         config: {
           temperature: options.temperature !== undefined ? options.temperature : 0.7,
-          maxOutputTokens: options.maxOutputTokens || 2048,
+          maxOutputTokens: options.maxOutputTokens || 4096,
+          thinkingConfig: { thinkingBudget: 0 },
           ...(options.responseMimeType ? { responseMimeType: options.responseMimeType } : {})
         }
       });
