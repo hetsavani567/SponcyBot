@@ -19,12 +19,37 @@ const SCOPES = [
 
 // ─── Generate OAuth Consent URL ─────────────────────────────────────────────
 const getAuthUrl = () => {
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+    return null;
+  }
   const oAuth2Client = createOAuthClient();
   return oAuth2Client.generateAuthUrl({
     access_type: "offline",   // offline = we get a refresh_token
     prompt: "consent",        // force consent so refresh_token is always returned
     scope: SCOPES
   });
+};
+
+// ─── Demo / Simulated Account Authorization ─────────────────────────────────
+const connectDemoAccount = async ({ email = "sponsorships@hackathon.club" } = {}) => {
+  const senderEmail = email || process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
+  const tokenDoc = await GmailToken.findOneAndUpdate(
+    { email: senderEmail },
+    {
+      email: senderEmail,
+      accessToken: `demo_token_${Date.now()}`,
+      refreshToken: `demo_refresh_${Date.now()}`,
+      expiryDate: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      scope: SCOPES.join(" ")
+    },
+    { upsert: true, new: true }
+  );
+  return tokenDoc;
+};
+
+const disconnectAccount = async () => {
+  await GmailToken.deleteMany({});
+  return { success: true };
 };
 
 // ─── Exchange Auth Code for Tokens ──────────────────────────────────────────
@@ -56,14 +81,24 @@ const exchangeCodeForTokens = async (code) => {
 
 // ─── Load a Fresh Authenticated OAuth Client from DB ────────────────────────
 const getAuthenticatedClient = async () => {
-  const tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
+  let tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
 
+  // If no token exists and no Google OAuth credentials are set, auto-connect demo
   if (!tokenDoc) {
-    const error = new Error(
-      "Gmail not authorized. Please complete OAuth flow at GET /gmail/oauth/start"
-    );
-    error.statusCode = 401;
-    throw error;
+    if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+      tokenDoc = await connectDemoAccount();
+    } else {
+      const error = new Error(
+        "Gmail not authorized. Please complete OAuth flow at GET /gmail/oauth/start"
+      );
+      error.statusCode = 401;
+      throw error;
+    }
+  }
+
+  const isDemo = Boolean(tokenDoc.accessToken && tokenDoc.accessToken.startsWith("demo_"));
+  if (isDemo || !process.env.GMAIL_CLIENT_ID) {
+    return { oAuth2Client: null, senderEmail: tokenDoc.email, isDemo: true };
   }
 
   const oAuth2Client = createOAuthClient();
@@ -88,18 +123,28 @@ const getAuthenticatedClient = async () => {
     console.log(`[GmailService] Tokens auto-refreshed for ${tokenDoc.email}`);
   });
 
-  return { oAuth2Client, senderEmail: tokenDoc.email };
+  return { oAuth2Client, senderEmail: tokenDoc.email, isDemo: false };
 };
 
 // ─── Check Auth Status ───────────────────────────────────────────────────────
 const getAuthStatus = async () => {
   const tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
+  const hasGoogleCredentials = Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET);
   if (!tokenDoc) {
-    return { authorized: false, email: null, expiryDate: null };
+    return {
+      authorized: false,
+      email: null,
+      isDemo: false,
+      hasGoogleCredentials,
+      expiryDate: null
+    };
   }
+  const isDemo = Boolean(tokenDoc.accessToken && tokenDoc.accessToken.startsWith("demo_"));
   return {
     authorized: true,
     email: tokenDoc.email,
+    isDemo,
+    hasGoogleCredentials,
     expiryDate: tokenDoc.expiryDate,
     updatedAt: tokenDoc.updatedAt
   };
@@ -147,19 +192,31 @@ const sendEmailViaGmail = async ({
     throw error;
   }
 
-  // Allow mock mode for local dev / testing without live Google credentials
-  if (mock || process.env.NODE_ENV === "test" || process.env.GMAIL_MOCK === "true") {
+  // If mock mode, or test env, or demo token, or live Google credentials not set
+  if (mock || process.env.NODE_ENV === "test" || process.env.GMAIL_MOCK === "true" || !process.env.GMAIL_CLIENT_ID) {
     const mockId = `msg_${Date.now()}`;
     const mockThreadId = threadId || `thread_${Date.now()}`;
     return {
       messageId: mockId,
       threadId: mockThreadId,
-      senderEmail: process.env.GMAIL_SENDER_EMAIL || "test-sponcy@gmail.com",
+      senderEmail: process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club",
       isMock: true
     };
   }
 
-  const { oAuth2Client, senderEmail } = await getAuthenticatedClient();
+  const authResult = await getAuthenticatedClient();
+  if (authResult.isDemo || !authResult.oAuth2Client) {
+    const mockId = `msg_${Date.now()}`;
+    const mockThreadId = threadId || `thread_${Date.now()}`;
+    return {
+      messageId: mockId,
+      threadId: mockThreadId,
+      senderEmail: authResult.senderEmail || process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club",
+      isMock: true
+    };
+  }
+
+  const { oAuth2Client, senderEmail } = authResult;
   const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
   const raw = makeEmailRaw({
@@ -214,125 +271,127 @@ const fetchThread = async (threadId, mock = false) => {
     throw error;
   }
 
-  // Mock / Dev fallback
-  if (mock || process.env.NODE_ENV === "test" || process.env.GMAIL_MOCK === "true") {
+  const { GmailThread } = require("../models/gmailThread");
+  const threadDoc = await GmailThread.findOne({ threadId });
+
+  // If live Google Cloud credentials exist and mock is not forced, try live Gmail API
+  if (process.env.GMAIL_CLIENT_ID && !mock) {
+    try {
+      const authResult = await getAuthenticatedClient();
+      if (!authResult.isDemo && authResult.oAuth2Client) {
+        const { oAuth2Client, senderEmail } = authResult;
+        const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+
+        const response = await gmail.users.threads.get({
+          userId: "me",
+          id: threadId,
+          format: "full"
+        });
+
+        const rawMessages = response.data.messages || [];
+        let subject = "";
+        let snippet = response.data.snippet || "";
+
+        const parsedMessages = rawMessages.map((msg) => {
+          const headers = msg.payload?.headers || [];
+          const getHeader = (name) =>
+            headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+
+          const msgSubject = getHeader("Subject");
+          if (msgSubject && !subject) subject = msgSubject;
+
+          const from = getHeader("From");
+          const to = getHeader("To");
+          const dateStr = getHeader("Date");
+          const body = extractBodyFromPayload(msg.payload);
+
+          const isFromSponsor =
+            from.toLowerCase().indexOf(senderEmail.toLowerCase()) === -1;
+
+          return {
+            messageId: msg.id,
+            from,
+            to,
+            date: dateStr ? new Date(dateStr) : new Date(parseInt(msg.internalDate, 10)),
+            snippet: msg.snippet || "",
+            body,
+            isFromSponsor
+          };
+        });
+
+        const lastMsg = parsedMessages[parsedMessages.length - 1];
+
+        return {
+          threadId: response.data.id,
+          subject: subject || snippet,
+          snippet,
+          lastMessageAt: lastMsg ? lastMsg.date : new Date(),
+          messages: parsedMessages
+        };
+      }
+    } catch (apiErr) {
+      console.warn("[GmailService] Live thread fetch failed:", apiErr.message);
+    }
+  }
+
+  // If thread exists in DB cache
+  if (threadDoc) {
     return {
       threadId,
-      subject: "ACM NIT Surat Hackathon Sponsorship",
-      snippet: "Thanks for reaching out! We are definitely interested in supporting.",
-      lastMessageAt: new Date(),
-      messages: [
-        {
-          messageId: `sent_${threadId}`,
-          from: process.env.GMAIL_SENDER_EMAIL || "partnerships@nitsurat.ac.in",
-          to: "sponsor@techcorp.io",
-          date: new Date(Date.now() - 3600000 * 24),
-          snippet: "Initial sponsorship pitch",
-          body: "We invite you to sponsor our hackathon.",
-          isFromSponsor: false
-        },
-        {
-          messageId: `reply_${threadId}`,
-          from: "sponsor@techcorp.io",
-          to: process.env.GMAIL_SENDER_EMAIL || "partnerships@nitsurat.ac.in",
-          date: new Date(),
-          snippet: "Thanks for reaching out! We are interested.",
-          body: "Hi team, thanks for reaching out. We would love to discuss a Title or Gold partnership. Can we schedule a 15-minute call this Thursday?",
-          isFromSponsor: true
-        }
-      ]
+      subject: threadDoc.subject || "Outreach Thread",
+      snippet: threadDoc.snippet || "",
+      lastMessageAt: threadDoc.lastMessageAt || threadDoc.updatedAt || new Date(),
+      messages: threadDoc.messages || []
     };
   }
 
-  const { oAuth2Client, senderEmail } = await getAuthenticatedClient();
-  const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
-
-  const response = await gmail.users.threads.get({
-    userId: "me",
-    id: threadId,
-    format: "full"
-  });
-
-  const rawMessages = response.data.messages || [];
-  let subject = "";
-  let snippet = response.data.snippet || "";
-
-  const parsedMessages = rawMessages.map((msg) => {
-    const headers = msg.payload?.headers || [];
-    const getHeader = (name) =>
-      headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
-
-    const msgSubject = getHeader("Subject");
-    if (msgSubject && !subject) subject = msgSubject;
-
-    const from = getHeader("From");
-    const to = getHeader("To");
-    const dateStr = getHeader("Date");
-    const body = extractBodyFromPayload(msg.payload);
-
-    const isFromSponsor =
-      from.toLowerCase().indexOf(senderEmail.toLowerCase()) === -1;
-
-    return {
-      messageId: msg.id,
-      from,
-      to,
-      date: dateStr ? new Date(dateStr) : new Date(parseInt(msg.internalDate, 10)),
-      snippet: msg.snippet || "",
-      body,
-      isFromSponsor
-    };
-  });
-
-  const lastMsg = parsedMessages[parsedMessages.length - 1];
-
+  // Clean empty state if thread does not exist yet
   return {
-    threadId: response.data.id,
-    subject: subject || snippet,
-    snippet,
-    lastMessageAt: lastMsg ? lastMsg.date : new Date(),
-    messages: parsedMessages
+    threadId,
+    subject: "Outreach Thread",
+    snippet: "No messages recorded yet.",
+    lastMessageAt: new Date(),
+    messages: []
   };
 };
 
 // ─── List Inbox Messages / Threads (Phase 4) ────────────────────────────────
 const listInboxMessages = async ({ q = "", maxResults = 20, mock = false } = {}) => {
-  if (mock || process.env.NODE_ENV === "test" || process.env.GMAIL_MOCK === "true") {
-    return [
-      {
-        id: "msg_sample_1",
-        threadId: "thread_sample_1",
-        from: "partnerships@cloudcorp.com",
-        subject: "Re: ACM NIT Surat Hackathon Sponsorship",
-        snippet: "We would love to set up a quick 15-min call to discuss tier options.",
-        date: new Date()
-      },
-      {
-        id: "msg_sample_2",
-        threadId: "thread_sample_2",
-        from: "devrel@infra.io",
-        subject: "Re: Sponsorship Inquiry",
-        snippet: "Unfortunately, our budget is fully allocated for this quarter. Wishing you the best!",
-        date: new Date(Date.now() - 3600000 * 12)
+  if (process.env.GMAIL_CLIENT_ID && !mock) {
+    try {
+      const authResult = await getAuthenticatedClient();
+      if (!authResult.isDemo && authResult.oAuth2Client) {
+        const { oAuth2Client } = authResult;
+        const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+
+        const res = await gmail.users.threads.list({
+          userId: "me",
+          q: q || "in:inbox",
+          maxResults
+        });
+
+        const threads = res.data.threads || [];
+        return threads.map((t) => ({
+          id: t.id,
+          threadId: t.id,
+          snippet: t.snippet || "",
+          historyId: t.historyId
+        }));
       }
-    ];
+    } catch (apiErr) {
+      console.warn("[GmailService] Live list messages failed:", apiErr.message);
+    }
   }
 
-  const { oAuth2Client } = await getAuthenticatedClient();
-  const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
-
-  const res = await gmail.users.threads.list({
-    userId: "me",
-    q: q || "in:inbox",
-    maxResults
-  });
-
-  const threads = res.data.threads || [];
+  // Return tracked threads from DB
+  const { GmailThread } = require("../models/gmailThread");
+  const threads = await GmailThread.find({}).sort({ updatedAt: -1 }).limit(maxResults);
   return threads.map((t) => ({
-    id: t.id,
-    threadId: t.id,
-    snippet: t.snippet || "",
-    historyId: t.historyId
+    id: t.threadId,
+    threadId: t.threadId,
+    snippet: t.snippet || t.subject || "",
+    subject: t.subject,
+    date: t.lastMessageAt || t.updatedAt
   }));
 };
 
@@ -444,6 +503,8 @@ Return ONLY raw JSON with no markdown:
 
 module.exports = {
   getAuthUrl,
+  connectDemoAccount,
+  disconnectAccount,
   exchangeCodeForTokens,
   getAuthenticatedClient,
   getAuthStatus,

@@ -1,15 +1,32 @@
-// ─── SponcyBot Demo UI Client Logic ─────────────────────────────────────────
+// ─── SponcyBot Complete Frontend Client Logic ────────────────────────────────
 
 let currentTab = 'dashboard';
 let currentEmailId = null;
 let currentCompanyId = null;
 let currentThreadId = null;
+let currentSimulateTarget = { outreachId: null, threadId: null, companyName: null, suggestedLabel: 'INTERESTED' };
 let activeEmailsCache = [];
+let companiesCache = [];
+let teamMembersCache = [];
 
+// ─── Lifecycle Initialization ───────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  handleUrlQueryParams();
   checkGmailStatus();
   fetchDashboardStats();
 });
+
+function handleUrlQueryParams() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('gmail_connected')) {
+    const acct = urlParams.get('account') || 'Organizer Mailbox';
+    showToast(`Gmail connected successfully for ${acct}!`, 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (urlParams.get('gmail_error')) {
+    showToast(`Gmail Connection Failed: ${urlParams.get('gmail_error')}`, 'error');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
 
 // ─── Toast Notifications ───────────────────────────────────────────────────
 function showToast(message, type = 'info') {
@@ -33,7 +50,7 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.classList.remove('translate-y-0', 'opacity-100');
     toast.classList.add('translate-y-20', 'opacity-0');
-  }, 4000);
+  }, 4200);
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
@@ -43,11 +60,8 @@ function switchTab(tab) {
     const view = document.getElementById(`view-${t}`);
     const navBtn = document.getElementById(`nav-${t}`);
     if (view) {
-      if (t === tab) {
-        view.classList.remove('hidden');
-      } else {
-        view.classList.add('hidden');
-      }
+      if (t === tab) view.classList.remove('hidden');
+      else view.classList.add('hidden');
     }
     if (navBtn) {
       if (t === tab) {
@@ -66,7 +80,7 @@ function switchTab(tab) {
   if (tab === 'outreach') loadOutreachList('all');
 }
 
-// ─── Gmail OAuth Status ─────────────────────────────────────────────────────
+// ─── Gmail OAuth & Demo Auth Management ─────────────────────────────────────
 async function checkGmailStatus() {
   try {
     const res = await fetch('/gmail/oauth/status');
@@ -74,15 +88,88 @@ async function checkGmailStatus() {
     const dot = document.getElementById('gmail-dot');
     const text = document.getElementById('gmail-status-text');
 
-    if (data.success && data.data.authorized) {
+    const badge = document.getElementById('modal-gmail-badge');
+    const acct = document.getElementById('modal-gmail-account');
+    const envStatus = document.getElementById('modal-gmail-env-status');
+
+    if (data.success && data.data?.authorized) {
+      const email = data.data.email || 'sponsorships@hackathon.club';
+      const isDemo = data.data.isDemo;
+
       dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
-      text.innerText = `Connected: ${data.data.email || 'Gmail'}`;
+      text.innerText = isDemo ? `Connected: ${email} (Demo)` : `Connected: ${email}`;
+
+      if (badge) {
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+        badge.innerText = isDemo ? 'Connected (Demo Sandbox)' : 'Connected (Live Google OAuth)';
+      }
+      if (acct) acct.innerText = email;
     } else {
-      dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
       text.innerText = 'Gmail Offline (Click to connect)';
+
+      if (badge) {
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        badge.innerText = 'Disconnected';
+      }
+      if (acct) acct.innerText = 'None (Not Connected)';
     }
+
+    if (envStatus) {
+      const hasCreds = Boolean(data.data?.hasGoogleCredentials);
+      envStatus.innerHTML = hasCreds
+        ? '<span class="text-emerald-400">Configured in .env</span>'
+        : '<span class="text-amber-400">Unset (Using Demo Fallback)</span>';
+    }
+
+    return data.data;
   } catch (err) {
     console.warn('Gmail status check failed:', err);
+  }
+}
+
+function openGmailModal() {
+  checkGmailStatus();
+  document.getElementById('modal-gmail').classList.remove('hidden');
+}
+
+function closeGmailModal() {
+  document.getElementById('modal-gmail').classList.add('hidden');
+}
+
+async function connectDemoAccountViaUI() {
+  showToast('Connecting demo organizer mailbox...', 'info');
+  try {
+    const res = await fetch('/gmail/oauth/demo-connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'sponsorships@hackathon.club' })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('1-Click Demo Account Connected! Zero Google Cloud setup needed.', 'success');
+      await checkGmailStatus();
+      closeGmailModal();
+    } else {
+      showToast(data.message || 'Demo connection failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function disconnectGmailViaUI() {
+  try {
+    const res = await fetch('/gmail/oauth/disconnect', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Gmail account disconnected.', 'info');
+      await checkGmailStatus();
+    } else {
+      showToast(data.message || 'Disconnect failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
   }
 }
 
@@ -100,7 +187,7 @@ async function fetchDashboardStats() {
       document.getElementById('stat-followups-due').innerText = d.outreach?.pendingFollowUpsDue ?? 0;
       document.getElementById('stat-meetings').innerText = d.outreach?.conversionsCount ?? 0;
 
-      // Update badge
+      // Update badge on Approval tab
       const badge = document.getElementById('badge-pending-count');
       if (badge) {
         const count = d.emails?.pendingApproval || 0;
@@ -114,16 +201,17 @@ async function fetchDashboardStats() {
   }
 }
 
-// ─── Screen 2: Sponsors ─────────────────────────────────────────────────────
+// ─── Screen 2: Sponsors (Intelligence & Research) ───────────────────────────
 async function loadSponsors() {
   const tbody = document.getElementById('sponsors-table-body');
   tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-500">Loading sponsors...</td></tr>';
 
   try {
-    // Try rank endpoint first, fallback to all companies
     let res = await fetch('/companies/rank');
     if (!res.ok) res = await fetch('/companies');
     const companies = await res.json();
+
+    companiesCache = Array.isArray(companies) ? companies : [];
 
     if (!Array.isArray(companies) || companies.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-500">No sponsors found. Click "+ Add Sponsor Company" above!</td></tr>';
@@ -131,7 +219,9 @@ async function loadSponsors() {
     }
 
     tbody.innerHTML = companies.map((c, idx) => {
+      const compId = c._id || c.id;
       const tierBadgeColor = {
+        Platinum: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
         Gold: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
         Silver: 'bg-slate-400/10 text-slate-300 border-slate-500/30',
         Bronze: 'bg-orange-500/10 text-orange-300 border-orange-500/30'
@@ -139,8 +229,8 @@ async function loadSponsors() {
 
       const askIcon = {
         money: '💰 Cash',
-        goodies: '🎁 Swag/Goodies',
-        infra: '☁️ Cloud/Credits'
+        goodies: '🎁 Swag/Prizes',
+        infra: '☁️ Cloud Credits'
       }[c.recommendedAsk] || (c.recommendedAsk || 'General');
 
       return `
@@ -148,12 +238,16 @@ async function loadSponsors() {
           <td class="py-3 px-4 font-medium text-white">
             <div class="flex items-center space-x-2">
               <span class="text-slate-500 font-mono text-[10px]">#${idx + 1}</span>
-              <span>${c.name}</span>
+              <span class="font-semibold">${c.name || c.company}</span>
             </div>
-            ${c.website ? `<a href="${c.website}" target="_blank" class="text-[11px] text-slate-500 hover:text-slate-400 underline">${c.website}</a>` : ''}
+            ${c.website ? `<a href="${c.website}" target="_blank" class="text-[11px] text-slate-500 hover:text-slate-300 underline block mt-0.5">${c.website}</a>` : ''}
           </td>
-          <td class="py-3 px-4 text-slate-400">${c.category || 'Other'}</td>
-          <td class="py-3 px-4 font-mono font-semibold ${c.score >= 70 ? 'text-emerald-400' : 'text-slate-300'}">${c.score || 0}/100</td>
+          <td class="py-3 px-4 text-slate-400">${c.category || c.industry || 'Technology'}</td>
+          <td class="py-3 px-4">
+            <span class="font-mono font-bold ${c.score >= 75 ? 'text-emerald-400' : c.score >= 60 ? 'text-blue-400' : 'text-slate-300'}">
+              ${c.score || 0}/100
+            </span>
+          </td>
           <td class="py-3 px-4">
             <span class="px-2 py-0.5 rounded text-[11px] font-medium border ${tierBadgeColor}">
               ${c.recommendedTier || 'Bronze'}
@@ -161,16 +255,27 @@ async function loadSponsors() {
           </td>
           <td class="py-3 px-4 text-slate-300 font-medium">${askIcon}</td>
           <td class="py-3 px-4 text-slate-400 text-[11px]">
-            ${c.contactName ? `${c.contactName}<br>` : ''}
+            ${c.contactName ? `<span class="text-slate-300">${c.contactName}</span><br>` : ''}
             <span class="text-slate-500">${c.contactEmail || 'No email registered'}</span>
           </td>
-          <td class="py-3 px-4 text-right space-x-2">
-            <button onclick="triggerDraftGeneration('${c._id}')" class="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px]">
-              Generate Email
-            </button>
-            <button onclick="viewSponsorDeepDive('${c._id}')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition text-[11px]">
-              Inspect &rarr;
-            </button>
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end space-x-1.5">
+              <button onclick="triggerCompanyResearch('${compId}')" title="Research company using Tavily + Gemini" class="px-2 py-1 bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white rounded border border-purple-500/30 transition text-[11px] flex items-center space-x-1">
+                <span>🔍 AI Research</span>
+              </button>
+              <button onclick="triggerDraftGeneration('${compId}')" title="Generate AI proposal draft" class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px]">
+                ✍️ Draft
+              </button>
+              <button onclick="openAssignOutreachModal('${compId}')" title="Assign to team member" class="px-2 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded border border-blue-500/30 transition text-[11px]">
+                👤 Assign
+              </button>
+              <button onclick="viewSponsorDeepDive('${compId}')" title="View 6-factor score breakdown" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition text-[11px]">
+                Inspect &rarr;
+              </button>
+              <button onclick="deleteSponsorCompany('${compId}', '${c.name || c.company}')" title="Delete Sponsor" class="px-1.5 py-1 text-slate-500 hover:text-red-400 rounded transition text-[11px]">
+                ✕
+              </button>
+            </div>
           </td>
         </tr>
       `;
@@ -199,6 +304,8 @@ async function submitAddSponsor(e) {
     contactEmail: formData.get('contactEmail')
   };
 
+  showToast(`Adding and researching sponsor '${payload.name}'...`, 'info');
+
   try {
     const res = await fetch('/companies', {
       method: 'POST',
@@ -207,12 +314,57 @@ async function submitAddSponsor(e) {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast(`Company '${payload.name}' added successfully!`, 'success');
+      showToast(`Sponsor '${payload.name}' added with score ${data.score || 0}/100!`, 'success');
       closeAddSponsorModal();
       form.reset();
-      loadSponsors();
+      await loadSponsors();
+      fetchDashboardStats();
+      const compId = data._id || data.id;
+      if (compId) {
+        viewSponsorDeepDive(compId);
+      }
     } else {
       showToast(data.message || 'Failed to add sponsor', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function triggerCompanyResearch(companyId) {
+  showToast('Researching sponsor with Tavily search + Gemini analysis...', 'info');
+  try {
+    const res = await fetch('/companies/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const tier = data.recommendedTier || 'Silver';
+      const score = data.score || 0;
+      showToast(`Research complete for ${data.name}! Score: ${score}/100 · Tier: ${tier}`, 'success');
+      loadSponsors();
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Research failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteSponsorCompany(companyId, name) {
+  if (!confirm(`Are you sure you want to remove '${name}' from sponsors?`)) return;
+  try {
+    const res = await fetch(`/companies/${companyId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Removed '${name}'`, 'info');
+      loadSponsors();
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Failed to delete company', 'error');
     }
   } catch (err) {
     showToast(err.message, 'error');
@@ -239,7 +391,7 @@ async function triggerDraftGeneration(companyId) {
   }
 }
 
-// ─── Screen 3: Approval Queue ───────────────────────────────────────────────
+// ─── Screen 3: Approval Queue (Human-in-the-Loop Send Guard) ────────────────
 async function loadPendingEmails() {
   const container = document.getElementById('drafts-list');
   container.innerHTML = '<div class="text-xs text-slate-500 text-center py-6">Loading drafts...</div>';
@@ -254,6 +406,11 @@ async function loadPendingEmails() {
 
     if (emails.length === 0) {
       container.innerHTML = '<div class="text-xs text-slate-500 text-center py-8">No drafts available. Generate one from the Sponsors screen!</div>';
+      document.getElementById('email-detail-container').innerHTML = `
+        <div class="flex items-center justify-center h-full text-slate-500 text-xs py-24">
+          Select an email draft from the left to inspect, edit, or approve.
+        </div>
+      `;
       return;
     }
 
@@ -273,17 +430,18 @@ async function loadPendingEmails() {
           </div>
           <p class="text-[11px] text-slate-400 line-clamp-1">${(em.body || '').slice(0, 70)}...</p>
           <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1">
-            <span>Tier Ask: <strong class="text-slate-400">${em.askType || 'money'}</strong></span>
+            <span>Ask: <strong class="text-slate-400">${em.askType || 'money'}</strong></span>
             <span>v${em.version || 1}</span>
           </div>
         </div>
       `;
     }).join('');
 
-    // Select first email by default
-    if (emails.length > 0) {
-      selectEmail(emails[0]._id);
-    }
+    const targetEmailId = currentEmailId && emails.some(e => e._id === currentEmailId)
+      ? currentEmailId
+      : emails[0]._id;
+
+    selectEmail(targetEmailId);
   } catch (err) {
     container.innerHTML = `<div class="text-xs text-red-400 text-center py-6">Error: ${err.message}</div>`;
   }
@@ -295,7 +453,7 @@ async function selectEmail(emailId) {
   const email = activeEmailsCache.find(e => e._id === emailId);
   if (!email) return;
 
-  // Highlight selected
+  // Highlight selected item in sidebar
   document.querySelectorAll('[id^="draft-item-"]').forEach(el => el.classList.remove('border-emerald-500/50', 'bg-slate-800'));
   const activeEl = document.getElementById(`draft-item-${emailId}`);
   if (activeEl) activeEl.classList.add('border-emerald-500/50', 'bg-slate-800');
@@ -309,7 +467,7 @@ async function selectEmail(emailId) {
   } catch (e) {}
 
   const isApproved = email.status === 'APPROVED';
-  const isPending = email.status === 'PENDING_APPROVAL';
+  const isSent = email.status === 'SENT';
 
   detailContainer.innerHTML = `
     <div class="space-y-4">
@@ -317,7 +475,7 @@ async function selectEmail(emailId) {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div>
           <div class="flex items-center space-x-2">
-            <span class="text-xs font-mono uppercase px-2 py-0.5 rounded border ${isApproved ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40'}">
+            <span class="text-xs font-mono uppercase px-2 py-0.5 rounded border ${isApproved ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : isSent ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40'}">
               Status: ${email.status}
             </span>
             <span class="text-xs text-slate-400">Version: <strong>v${email.version || 1}</strong></span>
@@ -329,6 +487,10 @@ async function selectEmail(emailId) {
             <button onclick="sendApprovedEmail('${email._id}')" class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-lg shadow-lg shadow-emerald-500/20 transition flex items-center space-x-1.5">
               <span>🚀 Send via Gmail</span>
             </button>
+          ` : isSent ? `
+            <div class="px-3 py-1.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold flex items-center space-x-1">
+              <span>✓ Dispatched to Gmail</span>
+            </div>
           ` : `
             <button onclick="approveEmailDraft('${email._id}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition shadow-sm">
               ✓ Approve Draft
@@ -339,6 +501,14 @@ async function selectEmail(emailId) {
           `}
         </div>
       </div>
+
+      <!-- Send Guard status banner -->
+      ${!isApproved && !isSent ? `
+        <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
+          <span>🛡️</span>
+          <span><strong>Send Guard Locked:</strong> This email cannot be sent via Gmail API until a human reviewer explicitly approves it.</span>
+        </div>
+      ` : ''}
 
       <!-- Editable Subject -->
       <div class="space-y-1">
@@ -387,12 +557,12 @@ async function selectEmail(emailId) {
 }
 
 async function approveEmailDraft(emailId) {
-  const reviewer = prompt('Reviewer Name (or leave blank for default):', 'Partnerships Director') || 'Partnerships Director';
+  const reviewer = prompt('Reviewer Name (or press OK for default):', 'Partnerships Director') || 'Partnerships Director';
   try {
     const res = await fetch(`/emails/${emailId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewerName: reviewer, notes: 'Verified tier, ask, and proof points' })
+      body: JSON.stringify({ reviewerName: reviewer, notes: 'Verified tier, ask, and value proposition.' })
     });
     const data = await res.json();
     if (res.ok) {
@@ -408,7 +578,7 @@ async function approveEmailDraft(emailId) {
 }
 
 async function rejectEmailDraft(emailId) {
-  const reason = prompt('Reason for rejection (this will be sent to the AI writer loop):', 'Needs to highlight cloud credits instead of cash.');
+  const reason = prompt('Reason for rejection (this will guide the rewrite loop):', 'Needs to highlight cloud credits and student bounty track.');
   if (!reason) return;
 
   try {
@@ -458,7 +628,7 @@ async function regenerateDraft(emailId) {
     const res = await fetch('/emails/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailId, customInstructions: 'Emphasize student builder community' })
+      body: JSON.stringify({ emailId, customInstructions: 'Emphasize student builder community and resume books' })
     });
     const data = await res.json();
     if (res.ok) {
@@ -473,20 +643,20 @@ async function regenerateDraft(emailId) {
 }
 
 async function sendApprovedEmail(emailId) {
-  const to = prompt('Recipient email address (e.g. sponsor contact):', 'sponsorships@techcorp.io');
+  const to = prompt('Recipient sponsor email address:', 'sponsorships@techcorp.io');
   if (!to) return;
 
-  showToast('Send Guard verifying status === APPROVED...', 'info');
+  showToast('Send Guard checking status === APPROVED before dispatch...', 'info');
 
   try {
     const res = await fetch('/gmail/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailId, to, mock: true })
+      body: JSON.stringify({ emailId, to })
     });
     const data = await res.json();
     if (res.ok) {
-      showToast(`Email dispatched via Gmail! Thread ID: ${data.data.threadId}`, 'success');
+      showToast(`Email dispatched via Gmail! Thread ID: ${data.data?.threadId}`, 'success');
       loadPendingEmails();
       fetchDashboardStats();
     } else {
@@ -497,7 +667,7 @@ async function sendApprovedEmail(emailId) {
   }
 }
 
-// ─── Screen 4: Outreach CRM ────────────────────────────────────────────────
+// ─── Screen 4: Outreach CRM & Follow-Up Tracker ────────────────────────────
 async function loadOutreachList(mode = 'all') {
   const tbody = document.getElementById('outreach-table-body');
   tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-500">Loading outreach records...</td></tr>';
@@ -509,12 +679,13 @@ async function loadOutreachList(mode = 'all') {
     const list = mode === 'due' ? (data.pendingFollowUps || []) : (Array.isArray(data) ? data : []);
 
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No ${mode === 'due' ? 'pending follow-ups due right now' : 'outreach records'}.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No ${mode === 'due' ? 'pending follow-ups due right now' : 'outreach records'}. Click "+ Assign Sponsor" to start!</td></tr>`;
       return;
     }
 
     tbody.innerHTML = list.map((o) => {
       const statusBadge = {
+        DRAFT: 'bg-slate-700 text-slate-300 border-slate-600',
         SENT: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
         'WAITING FOR REPLY': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
         INTERESTED: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
@@ -526,13 +697,14 @@ async function loadOutreachList(mode = 'all') {
       }[o.status] || 'bg-slate-800 text-slate-400';
 
       const isCapped = (o.followUpCount || 0) >= 2;
+      const compName = o.companyId?.name || 'Sponsor';
 
       return `
         <tr class="hover:bg-slate-800/40 transition">
           <td class="py-3 px-4 font-medium text-white">
-            ${o.companyId?.name || 'Sponsor'}
+            <span class="font-semibold">${compName}</span>
           </td>
-          <td class="py-3 px-4 text-slate-400">${o.memberId?.name || 'Alex Patel'}</td>
+          <td class="py-3 px-4 text-slate-300">${o.memberId?.name || 'Unassigned'}</td>
           <td class="py-3 px-4">
             <span class="px-2 py-0.5 rounded text-[11px] font-mono border ${statusBadge}">
               ${o.status}
@@ -549,17 +721,34 @@ async function loadOutreachList(mode = 'all') {
           <td class="py-3 px-4 text-slate-400 text-[11px]">
             ${o.lastContactedAt ? new Date(o.lastContactedAt).toLocaleDateString() : 'Initial'}
           </td>
-          <td class="py-3 px-4 text-right space-x-2">
-            ${!isCapped && !['CLOSED', 'DECLINED'].includes(o.status) ? `
-              <button onclick="registerFollowUp('${o._id}')" class="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded border border-blue-500/30 transition text-[11px]">
-                Send Follow-up
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end space-x-1.5">
+              ${!isCapped && !['CLOSED', 'DECLINED'].includes(o.status) ? `
+                <button onclick="registerFollowUp('${o._id}')" title="Send Follow-up (Strict Max 2)" class="px-2 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white rounded border border-blue-500/30 transition text-[11px]">
+                  Follow-up
+                </button>
+              ` : `
+                <span class="text-[10px] text-slate-500 font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">Capped</span>
+              `}
+              
+              <button onclick="openSimulateReplyModal('${o._id}', '${o.threadId || ''}', '${compName}')" title="Simulate Sponsor Inbound Reply" class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px]">
+                💬 Reply
               </button>
-            ` : ''}
-            ${o.threadId ? `
-              <button onclick="openThread('${o.threadId}')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition text-[11px]">
-                View Thread
+
+              <button onclick="viewOutreachTimeline('${o._id}', '${compName}')" title="View Audit Event Log" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition text-[11px]">
+                📜 Audit
               </button>
-            ` : ''}
+
+              <button onclick="changeOutreachStatus('${o._id}')" title="Update Status Manually" class="px-1.5 py-1 text-slate-400 hover:text-white rounded text-[11px]">
+                ⚙️
+              </button>
+
+              ${o.status !== 'CLOSED' ? `
+                <button onclick="closeOutreachPrompt('${o._id}')" title="Close Outreach" class="px-1.5 py-1 text-slate-500 hover:text-red-400 rounded text-[11px]">
+                  ✕
+                </button>
+              ` : ''}
+            </div>
           </td>
         </tr>
       `;
@@ -574,7 +763,7 @@ async function registerFollowUp(outreachId) {
     const res = await fetch(`/outreach/${outreachId}/followup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes: 'Follow-up registered from dashboard' })
+      body: JSON.stringify({ notes: 'Follow-up registered via CRM' })
     });
     const data = await res.json();
     if (res.ok) {
@@ -582,14 +771,362 @@ async function registerFollowUp(outreachId) {
       loadOutreachList('all');
       fetchDashboardStats();
     } else {
-      showToast(data.message || 'Follow-up blocked', 'warning');
+      showToast(data.message || 'Follow-up blocked (max 2 limit reached)', 'warning');
     }
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
 
-// ─── Screen 5: Sponsor Details & Thread Viewer ──────────────────────────────
+async function changeOutreachStatus(outreachId) {
+  const allowed = ['WAITING FOR REPLY', 'INTERESTED', 'MEETING', 'DECLINED', 'CLOSED'];
+  const newStatus = prompt(`Enter new status (${allowed.join(', ')}):`, 'INTERESTED');
+  if (!newStatus || !allowed.includes(newStatus)) return;
+
+  try {
+    const res = await fetch(`/outreach/${outreachId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus, reason: 'Manual status update via dashboard' })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Status updated to ${newStatus}`, 'success');
+      loadOutreachList('all');
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Status update failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function closeOutreachPrompt(outreachId) {
+  const reason = prompt('Reason for closing outreach:', 'Unresponsive after max follow-ups') || 'Closed by organizer';
+  try {
+    const res = await fetch(`/outreach/${outreachId}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Outreach closed successfully.', 'info');
+      loadOutreachList('all');
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Failed to close outreach', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function pollInboxReplies() {
+  showToast('Polling inbox messages...', 'info');
+  try {
+    const res = await fetch('/gmail/messages?mock=true');
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Inbox poll complete: ${data.count || 0} messages tracked.`, 'success');
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Failed to poll inbox', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ─── Assign Outreach Modal ──────────────────────────────────────────────────
+async function openAssignOutreachModal(preselectedCompanyId = null) {
+  const modal = document.getElementById('modal-assign-outreach');
+  const compSelect = document.getElementById('assign-company-select');
+  const memberSelect = document.getElementById('assign-member-select');
+  const warningBox = document.getElementById('assign-duplicate-warning');
+
+  warningBox.classList.add('hidden');
+  modal.classList.remove('hidden');
+
+  compSelect.innerHTML = '<option value="">Loading companies...</option>';
+  memberSelect.innerHTML = '<option value="">Loading team members...</option>';
+
+  try {
+    // 1. Load companies
+    let compRes = await fetch('/companies');
+    let companies = await compRes.json();
+    if (!Array.isArray(companies)) companies = [];
+    companiesCache = companies;
+
+    compSelect.innerHTML = companies.map(c => `
+      <option value="${c._id || c.id}" ${preselectedCompanyId === (c._id || c.id) ? 'selected' : ''}>
+        ${c.name} (${c.category || 'Tech'}) - Tier: ${c.recommendedTier || 'Silver'}
+      </option>
+    `).join('');
+
+    // 2. Load team members
+    let memberRes = await fetch('/team-members');
+    let members = await memberRes.json();
+    teamMembersCache = Array.isArray(members) ? members : [];
+
+    if (teamMembersCache.length === 0) {
+      memberSelect.innerHTML = '<option value="">No team members yet. Click "+ New Member" to add one.</option>';
+    } else {
+      memberSelect.innerHTML = teamMembersCache.map(m => `
+        <option value="${m._id}">${m.name} (${m.role || 'Coordinator'})</option>
+      `).join('');
+    }
+  } catch (err) {
+    compSelect.innerHTML = '<option value="">Error loading list</option>';
+  }
+}
+
+function closeAssignOutreachModal() {
+  document.getElementById('modal-assign-outreach').classList.add('hidden');
+}
+
+async function submitAssignOutreach(e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const payload = {
+    companyId: formData.get('companyId'),
+    memberId: formData.get('memberId'),
+    notes: formData.get('notes')
+  };
+
+  const warningBox = document.getElementById('assign-duplicate-warning');
+  const warningMsg = document.getElementById('assign-duplicate-message');
+
+  try {
+    const res = await fetch('/outreach', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.status === 409) {
+      // DUPLICATE OUTREACH PREVENTED!
+      warningBox.classList.remove('hidden');
+      warningMsg.innerText = data.message || 'Duplicate outreach prevented: An active outreach already exists for this company.';
+      showToast('Duplicate outreach blocked by system rule!', 'warning');
+      return;
+    }
+
+    if (res.ok) {
+      showToast('Sponsor assigned to outreach successfully!', 'success');
+      closeAssignOutreachModal();
+      form.reset();
+      loadOutreachList('all');
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Failed to assign outreach', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ─── Add Team Member Modal ──────────────────────────────────────────────────
+function openAddMemberModal() {
+  document.getElementById('modal-add-member').classList.remove('hidden');
+}
+
+function closeAddMemberModal() {
+  document.getElementById('modal-add-member').classList.add('hidden');
+}
+
+async function submitAddMember(e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const payload = {
+    name: formData.get('name'),
+    email: formData.get('email'),
+    role: formData.get('role')
+  };
+
+  try {
+    const res = await fetch('/team-members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Team member '${payload.name}' added!`, 'success');
+      closeAddMemberModal();
+      form.reset();
+      openAssignOutreachModal();
+    } else {
+      showToast(data.message || 'Failed to add team member', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ─── Outreach Timeline / Audit Modal ────────────────────────────────────────
+async function viewOutreachTimeline(outreachId, companyName = 'Sponsor') {
+  const modal = document.getElementById('modal-outreach-timeline');
+  const container = document.getElementById('timeline-events-container');
+  const badge = document.getElementById('timeline-company-badge');
+
+  badge.innerText = companyName;
+  modal.classList.remove('hidden');
+  container.innerHTML = '<p class="text-slate-500 text-center py-8">Loading audit trail...</p>';
+
+  try {
+    const res = await fetch(`/outreach/${outreachId}`);
+    const data = await res.json();
+    const events = data.timeline || [];
+
+    if (events.length === 0) {
+      container.innerHTML = '<p class="text-slate-500 text-center py-8">No audit events recorded for this outreach.</p>';
+      return;
+    }
+
+    container.innerHTML = events.map((ev, idx) => `
+      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
+        <span class="w-6 h-6 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+          #${idx + 1}
+        </span>
+        <div class="flex-1 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-white text-xs">${ev.eventType || 'STATUS_CHANGE'}</span>
+            <span class="text-[10px] text-slate-500 font-mono">${new Date(ev.createdAt).toLocaleString()}</span>
+          </div>
+          <p class="text-slate-300 text-[11px]">${ev.description || 'Transitioned status'}</p>
+          <div class="text-[10px] text-slate-500">
+            ${ev.fromStatus ? `From: <strong class="text-slate-400">${ev.fromStatus}</strong> &rarr; ` : ''}
+            To: <strong class="text-emerald-400">${ev.toStatus || 'CURRENT'}</strong>
+            ${ev.memberId?.name ? ` · Actor: <span class="text-slate-300">${ev.memberId.name}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = `<p class="text-red-400 text-center py-8">Error loading audit: ${err.message}</p>`;
+  }
+}
+
+function closeOutreachTimelineModal() {
+  document.getElementById('modal-outreach-timeline').classList.add('hidden');
+}
+
+// ─── Simulate Reply & AI Classification Modal ───────────────────────────────
+function openSimulateReplyModal(outreachId, threadId, companyName) {
+  currentSimulateTarget = {
+    outreachId,
+    threadId: threadId || `demo_thread_${Date.now()}`,
+    companyName: companyName || 'Sponsor Company',
+    suggestedLabel: 'INTERESTED'
+  };
+
+  document.getElementById('modal-simulate-reply').classList.remove('hidden');
+  document.getElementById('simulate-classification-result').classList.add('hidden');
+  setReplyPreset('INTERESTED');
+}
+
+function closeSimulateReplyModal() {
+  document.getElementById('modal-simulate-reply').classList.add('hidden');
+}
+
+function setReplyPreset(type) {
+  const textarea = document.getElementById('simulate-reply-text');
+  if (type === 'INTERESTED') {
+    textarea.value = `Hi Team,\n\nThanks for reaching out! We are definitely interested in supporting the ACM Hackathon. Could you send over the Gold tier deliverables deck? Let's connect on a 15-minute call this Thursday.`;
+  } else if (type === 'DECLINED') {
+    textarea.value = `Hello,\n\nThank you for thinking of us. Unfortunately our university sponsorship budget for this quarter is fully committed, so we will have to pass this year.`;
+  } else {
+    textarea.value = `Hi,\n\nI am currently out of office on business travel until next Tuesday. Please follow up with me next week.`;
+  }
+}
+
+async function runSimulateReplyClassification() {
+  const replyText = document.getElementById('simulate-reply-text').value;
+  if (!replyText.trim()) {
+    showToast('Please enter sponsor reply text to classify', 'warning');
+    return;
+  }
+
+  showToast('Analyzing sponsor reply sentiment with AI...', 'info');
+
+  try {
+    const res = await fetch('/gmail/replies/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        replyText,
+        companyName: currentSimulateTarget.companyName,
+        threadId: currentSimulateTarget.threadId
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.data) {
+      const cls = data.data;
+      currentSimulateTarget.suggestedLabel = cls.suggestedLabel;
+
+      const resultBox = document.getElementById('simulate-classification-result');
+      const badge = document.getElementById('sim-result-badge');
+      const conf = document.getElementById('sim-result-confidence');
+      const reason = document.getElementById('sim-result-reason');
+      const confirmBtn = document.getElementById('sim-confirm-btn');
+
+      resultBox.classList.remove('hidden');
+      badge.innerText = cls.suggestedLabel;
+      conf.innerText = `Confidence: ${cls.confidence || 'HIGH'}`;
+      reason.innerText = cls.reason || 'AI classified intent based on sponsor message.';
+
+      const badgeColor = {
+        INTERESTED: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40',
+        DECLINED: 'bg-red-500/20 text-red-300 border border-red-500/40',
+        OTHER: 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+      }[cls.suggestedLabel] || 'bg-slate-800 text-slate-300';
+
+      badge.className = `px-2 py-0.5 rounded text-[11px] font-bold font-mono ${badgeColor}`;
+      confirmBtn.innerText = `Confirm Outcome '${cls.suggestedLabel}' & Update CRM`;
+    } else {
+      showToast(data.message || 'Classification failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function confirmSimulatedOutcome() {
+  const label = currentSimulateTarget.suggestedLabel || 'INTERESTED';
+  showToast(`Confirming reply outcome: ${label}...`, 'info');
+
+  try {
+    const res = await fetch('/gmail/replies/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        threadId: currentSimulateTarget.threadId,
+        outreachId: currentSimulateTarget.outreachId,
+        label,
+        confirmedBy: 'Partnerships Director',
+        notes: `Simulated inbound sponsor reply confirmed as ${label}`
+      })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Outcome confirmed! Outreach status updated to ${label}.`, 'success');
+      closeSimulateReplyModal();
+      loadOutreachList('all');
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Confirmation failed', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ─── Screen 5: Sponsor Deep Dive & Live Thread Viewer ───────────────────────
 async function viewSponsorDeepDive(companyId) {
   currentCompanyId = companyId;
   switchTab('details');
@@ -599,15 +1136,26 @@ async function viewSponsorDeepDive(companyId) {
     const data = await res.json();
     const company = data.company || data;
 
-    document.getElementById('detail-company-title').innerText = company.name || 'Company Details';
-    document.getElementById('detail-tier-badge').innerText = `Tier: ${company.recommendedTier || 'Bronze'}`;
-    document.getElementById('detail-company-sub').innerText = `${company.category || 'Tech'} · Score: ${company.score || 0}/100`;
+    const tier = company.recommendedTier || 'Bronze';
+    const tierColor = {
+      Platinum: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+      Gold: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      Silver: 'bg-slate-400/20 text-slate-300 border-slate-500/40',
+      Bronze: 'bg-orange-500/20 text-orange-300 border-orange-500/40'
+    }[tier] || 'bg-slate-800 text-slate-300 border-slate-700';
 
-    document.getElementById('detail-research-text').innerText = company.research || 'No research available yet.';
+    const tierBadge = document.getElementById('detail-tier-badge');
+    tierBadge.className = `text-xs px-2.5 py-0.5 rounded border font-semibold ${tierColor}`;
+    tierBadge.innerText = `Tier: ${tier}`;
+
+    document.getElementById('detail-company-title').innerText = company.name || company.company || 'Company Details';
+    document.getElementById('detail-company-sub').innerText = `${company.category || company.industry || 'Technology'} · Score: ${company.score || 0}/100`;
+
+    document.getElementById('detail-research-text').innerText = company.research || 'No research available yet. Click "🔍 Refresh AI Research" above.';
     document.getElementById('detail-strategy-text').innerText = company.strategy || 'Direct partnership pitch with track branding.';
     document.getElementById('detail-ask-text').innerText = `${company.recommendedAsk || 'money'} (${company.whatToAsk || 'Sponsorship'})`;
 
-    // Scores
+    // 6-Factor Scores
     document.getElementById('score-eventFit').innerText = `${company.eventFit || 0}/25`;
     document.getElementById('score-sponsorshipEvidence').innerText = `${company.sponsorshipEvidence || 0}/20`;
     document.getElementById('score-educationCommunityFit').innerText = `${company.educationCommunityFit || 0}/15`;
@@ -621,10 +1169,39 @@ async function viewSponsorDeepDive(companyId) {
     if (Array.isArray(outList) && outList[0] && outList[0].threadId) {
       openThread(outList[0].threadId);
     } else {
-      openThread('demo_thread_sponsor');
+      currentThreadId = null;
+      document.getElementById('thread-id-display').innerText = 'No thread active';
+      document.getElementById('ai-suggestion-box').classList.add('hidden');
+      document.getElementById('thread-messages-list').innerHTML = '<div class="text-xs text-slate-500 text-center py-16">No conversation messages recorded yet.</div>';
     }
   } catch (err) {
     showToast(`Failed to load company details: ${err.message}`, 'error');
+  }
+}
+
+async function reResearchCurrentCompany() {
+  if (!currentCompanyId) {
+    showToast('No sponsor selected to refresh research.', 'warning');
+    return;
+  }
+  showToast('Refreshing sponsor AI research...', 'info');
+  try {
+    const res = await fetch('/companies/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId: currentCompanyId })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Research updated! Score: ${data.score || 0}/100 · Tier: ${data.recommendedTier || 'Silver'}`, 'success');
+      viewSponsorDeepDive(currentCompanyId);
+      loadSponsors();
+      fetchDashboardStats();
+    } else {
+      showToast(data.message || 'Failed to refresh research', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
   }
 }
 
@@ -692,7 +1269,7 @@ async function confirmOutcome(label) {
         threadId: currentThreadId,
         label,
         confirmedBy: 'Partnerships Lead',
-        notes: `Human confirmed ${label}`
+        notes: `Human confirmed outcome: ${label}`
       })
     });
     const data = await res.json();
