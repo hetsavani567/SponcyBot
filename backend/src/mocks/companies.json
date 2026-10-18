@@ -1,0 +1,50 @@
+[
+  {
+    "id": "c-001",
+    "name": "ExampleTech Pvt Ltd",
+    "website": "https://exampletech.example",
+    "industry": "Cloud & dev tools",
+    "research": "Cloud tooling company that has sponsored student hackathons before and offers developer credits.",
+    "score": 82,
+    "category": "Cloud & dev tools",
+    "recommendedTier": "Gold",
+    "recommendedAsk": "money",
+    "shortPitch": "Leading cloud provider offering dev infrastructure.",
+    "strategy": "Highlight developer mindshare and workshop hosting.",
+    "whatToAsk": "Request Gold sponsorship of $5,000.",
+    "contactName": "Alex Chen",
+    "contactRole": "Head of Developer Relations"
+  },
+  {
+    "id": "c-002",
+    "name": "SnackCo Foods",
+    "website": "https://snackco.example",
+    "industry": "Food & beverage",
+    "research": "Snack brand that runs campus promotions and gives away product samples at student events.",
+    "score": 64,
+    "category": "Consumer goods",
+    "recommendedTier": "Silver",
+    "recommendedAsk": "goodies",
+    "shortPitch": "Popular student snack brand seeking campus engagement.",
+    "strategy": "Offer branded snack stations and swag bag placement.",
+    "whatToAsk": "Request snack boxes and beverage sponsorship.",
+    "contactName": "Sarah Jenkins",
+    "contactRole": "Campus Marketing Lead"
+  },
+  {
+    "id": "c-003",
+    "name": "HostFast Cloud",
+    "website": "https://hostfast.example",
+    "industry": "Web hosting",
+    "research": "Hosting provider that offers free server credits to student teams and open-source projects.",
+    "score": 71,
+    "category": "Infrastructure",
+    "recommendedTier": "Silver",
+    "recommendedAsk": "infra",
+    "shortPitch": "Fast and reliable cloud hosting platform.",
+    "strategy": "Provide free cloud instances to participating hackers.",
+    "whatToAsk": "Request $1,000 in cloud credits for participants.",
+    "contactName": "David Miller",
+    "contactRole": "Community Manager"
+  }
+]

@@ -26,6 +26,7 @@ const outreachEventSchema = new mongoose.Schema(
         "OUTREACH_CREATED",
         "EMAIL_ASSIGNED",
         "EMAIL_APPROVED",
+        "EMAIL_REJECTED",
         "EMAIL_SENT",
         "REPLY_RECEIVED",
         "FOLLOWUP_SCHEDULED",
