@@ -362,6 +362,12 @@ async function submitAddSponsor(e) {
     contactEmail: formData.get('contactEmail')
   };
 
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Analyzing & Saving...';
+  }
+
   showToast(`Adding and researching sponsor '${payload.name}'...`, 'info');
 
   try {
@@ -370,6 +376,7 @@ async function submitAddSponsor(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+
     if (res.ok) {
       showToast(`Sponsor '${payload.name}' added with score ${data.score || 0}/100!`, 'success');
       closeAddSponsorModal();
@@ -381,10 +388,16 @@ async function submitAddSponsor(e) {
         viewSponsorDeepDive(compId);
       }
     } else {
-      showToast(data.message || 'Failed to add sponsor', 'error');
+      const errorMsg = data.error ? `${data.message}: ${data.error}` : (data.message || 'Failed to add sponsor');
+      showToast(errorMsg, 'error');
     }
   } catch (err) {
     showToast(err.message, 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Save Sponsor';
+    }
   }
 }
 

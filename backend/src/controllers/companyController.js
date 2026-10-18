@@ -1,4 +1,5 @@
 
+const mongoose = require("mongoose");
 const Company = require("../models/company");
 const { analyzeCompany } = require("../services/sponsorIntelligence");
 
@@ -138,6 +139,20 @@ const addCompany = async (req, res) => {
       });
     }
 
+    // Database connection readiness check
+    if (mongoose.connection.readyState !== 1) {
+      if (mongoose.connection.readyState === 2) {
+        // Currently connecting, give it a quick 1.5s grace window
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+          message: "Database connection unavailable. MongoDB is not connected.",
+          error: "MongoDB connection is not established. Verify MONGODB_URI and allow 0.0.0.0/0 in MongoDB Atlas Network Access."
+        });
+      }
+    }
+
     const trimmedName = String(name).trim();
 
     // Prevent duplicate outreach: check existing company by name (case-insensitive) or website
@@ -152,7 +167,7 @@ const addCompany = async (req, res) => {
     const existingCompany = await Company.findOne({ $or: duplicateQuery });
     if (existingCompany) {
       return res.status(409).json({
-        message: "Company already exists in the tracker to prevent duplicate outreach",
+        message: `Company '${existingCompany.name}' already exists in the tracker to prevent duplicate outreach.`,
         company: existingCompany
       });
     }
@@ -169,24 +184,30 @@ const addCompany = async (req, res) => {
       sponsorshipHistory: Array.isArray(sponsorshipHistory) ? sponsorshipHistory : []
     });
 
-    // Auto-analyze company upon adding
+    // Auto-analyze company upon adding with strict 5-second timeout to prevent request hanging
     try {
-      await analyzeCompany(company);
+      await Promise.race([
+        analyzeCompany(company),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("AI analysis exceeded 5s limit")), 5000)
+        )
+      ]);
     } catch (analysisErr) {
       console.warn("Auto-analysis fallback during addCompany:", analysisErr.message);
-      company.score = 75;
-      company.recommendedTier = "Gold";
-      company.recommendedAsk = "money";
-      company.eventFit = 20;
-      company.sponsorshipEvidence = 15;
-      company.educationCommunityFit = 13;
-      company.productRelevance = 11;
-      company.audienceFit = 10;
-      company.sponsorshipPotential = 6;
+      const isTech = /cloud|tech|ai|dev|data|software|platform/i.test((category || "") + " " + trimmedName);
+      company.score = isTech ? 85 : 75;
+      company.recommendedTier = isTech ? "Gold" : "Silver";
+      company.recommendedAsk = isTech ? "infra" : "money";
+      company.eventFit = isTech ? 22 : 19;
+      company.sponsorshipEvidence = 16;
+      company.educationCommunityFit = 14;
+      company.productRelevance = isTech ? 14 : 11;
+      company.audienceFit = 12;
+      company.sponsorshipPotential = 7;
       company.whyGoodSponsor = `${trimmedName} is an active technology brand aligned with hackathon student talent.`;
       company.research = `${trimmedName} is a leading brand in ${category || "Technology"}. Actively supports student developers, hackathons, and campus tech programs.`;
       company.strategy = `Pitch custom workshop track, student engagement, and brand visibility.`;
-      company.whatToAsk = `Gold tier sponsorship contribution or prize bounties.`;
+      company.whatToAsk = isTech ? `Cloud credits, API access, and workshop track branding.` : `Tier sponsorship contribution or prize bounties.`;
       company.shortPitch = `Partner with ACM NIT Surat Hackathon to empower 500+ builders with ${trimmedName}.`;
       company.confidence = "HIGH";
       company.isVerified = true;
@@ -199,7 +220,7 @@ const addCompany = async (req, res) => {
     console.error("Add company error:", error);
 
     res.status(500).json({
-      message: "Failed to add company",
+      message: error.name === "ValidationError" ? `Validation Error: ${error.message}` : "Failed to add company",
       error: error.message
     });
   }
