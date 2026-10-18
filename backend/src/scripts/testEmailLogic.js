@@ -7,7 +7,12 @@ const {
   parseAndValidateEmailResponse,
   generateEmailDraft
 } = require("../services/emailGenerationService");
-const mockCompanies = require("../mocks/companies.json");
+const testCompany = {
+  name: "Acme Tech",
+  industry: "Technology",
+  recommendedTier: "Gold",
+  recommendedAsk: "money"
+};
 
 // Helper mock Email factory
 const createMockEmail = (initialData = {}) => {
@@ -59,7 +64,13 @@ async function runTests() {
 
   // Test 4: Prompt generation using real Company model fields
   console.log("Test 4: Prompt generation using real Company fields");
-  const company = mockCompanies[0];
+  const company = {
+    name: "Acme Tech",
+    industry: "Technology",
+    contactName: "Alex Chen",
+    recommendedTier: "Gold",
+    recommendedAsk: "money"
+  };
   const initialPrompt = buildEmailPrompt(company, { type: "initial" });
   assert(initialPrompt.includes(company.name), "Prompt must include company name");
   assert(initialPrompt.includes(company.contactName), "Prompt must include contactName");

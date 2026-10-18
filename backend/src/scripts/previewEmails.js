@@ -1,13 +1,29 @@
 require("dotenv").config();
 const { generateEmailDraft } = require("../services/emailGenerationService");
-const mockCompanies = require("../mocks/companies.json");
+const mongoose = require("mongoose");
+const Company = require("../models/company");
 
 async function previewAll() {
   console.log("================================================================================");
   console.log("               FINAL SPONSY BOT EMAIL GENERATION SHOWCASE                       ");
   console.log("================================================================================\n");
 
-  for (const company of mockCompanies) {
+  if (process.env.MONGODB_URI) {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 3000 });
+    } catch (_) {}
+  }
+
+  const companies = (mongoose.connection.readyState === 1)
+    ? await Company.find({}).limit(5)
+    : [];
+
+  if (companies.length === 0) {
+    console.log("No companies in database. Add a sponsor to generate preview emails.");
+    process.exit(0);
+  }
+
+  for (const company of companies) {
     console.log("################################################################################");
     console.log(`SPONSOR: ${company.name}`);
     console.log(`INDUSTRY: ${company.industry} | TIER: ${company.recommendedTier} | ASK TYPE: ${company.recommendedAsk.toUpperCase()}`);

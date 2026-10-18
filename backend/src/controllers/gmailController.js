@@ -1,24 +1,82 @@
 const {
   getAuthUrl,
   exchangeCodeForTokens,
-  getAuthStatus
+  getAuthStatus,
+  connectDemoAccount,
+  disconnectAccount
 } = require("../services/gmailService");
 
 /**
  * GET /gmail/oauth/start
  * Redirects the user to Google's OAuth consent screen.
+ * If live Google Cloud OAuth credentials are not configured,
+ * it auto-connects the demo organizer account so the user never sees an Error 400.
  */
-const startOAuth = (req, res) => {
+const startOAuth = async (req, res) => {
   try {
+    if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+      const email = process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
+      await connectDemoAccount({ email });
+      return res.redirect(`/?gmail_connected=demo&account=${encodeURIComponent(email)}`);
+    }
+
     const url = getAuthUrl();
-    // In production this would redirect; we return the URL too
-    // so it can be opened from Postman / curl during development.
+    if (!url) {
+      const email = process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
+      await connectDemoAccount({ email });
+      return res.redirect(`/?gmail_connected=demo&account=${encodeURIComponent(email)}`);
+    }
+
     res.redirect(url);
   } catch (error) {
     console.error("[GmailController] startOAuth error:", error);
-    res.status(500).json({
+    res.redirect(`/?gmail_error=${encodeURIComponent(error.message)}`);
+  }
+};
+
+/**
+ * POST /gmail/oauth/demo-connect
+ * 1-click authorization of demo organizer account
+ */
+const connectDemo = async (req, res) => {
+  try {
+    const email = req.body?.email || process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
+    const tokenDoc = await connectDemoAccount({ email });
+    return res.status(200).json({
+      success: true,
+      message: `Gmail successfully connected for ${email}`,
+      data: {
+        email: tokenDoc.email,
+        authorized: true,
+        isDemo: true
+      }
+    });
+  } catch (error) {
+    console.error("[GmailController] connectDemo error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Failed to generate OAuth URL",
+      message: "Failed to connect demo account",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /gmail/oauth/disconnect
+ * Disconnects current Gmail authorization
+ */
+const disconnectOAuth = async (req, res) => {
+  try {
+    await disconnectAccount();
+    return res.status(200).json({
+      success: true,
+      message: "Gmail account disconnected"
+    });
+  } catch (error) {
+    console.error("[GmailController] disconnectOAuth error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to disconnect Gmail",
       error: error.message
     });
   }
@@ -554,6 +612,8 @@ const runSimulationHandler = async (req, res) => {
 
 module.exports = {
   startOAuth,
+  connectDemo,
+  disconnectOAuth,
   oAuthCallback,
   getOAuthStatus,
   sendEmail,

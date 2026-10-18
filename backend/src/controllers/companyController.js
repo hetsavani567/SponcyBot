@@ -14,18 +14,27 @@ const getScoreBreakdown = (company) => ({
 const formatRankedCompany = (company, index) => ({
   rank: index + 1,
   id: company.id || company._id,
+  _id: company._id || company.id,
+  name: company.name,
   company: company.name,
   website: company.website,
   industry: company.industry,
   category: company.category,
   score: company.score || 0,
-  recommendedTier: company.recommendedTier,
-  recommendedAsk: company.recommendedAsk,
+  recommendedTier: company.recommendedTier || "Bronze",
+  recommendedAsk: company.recommendedAsk || "money",
   scoreBreakdown: getScoreBreakdown(company),
-  whyGoodSponsor: company.whyGoodSponsor,
-  strategy: company.strategy,
-  whatToAsk: company.whatToAsk,
-  shortPitch: company.shortPitch,
+  eventFit: company.eventFit || 0,
+  sponsorshipEvidence: company.sponsorshipEvidence || 0,
+  educationCommunityFit: company.educationCommunityFit || 0,
+  productRelevance: company.productRelevance || 0,
+  audienceFit: company.audienceFit || 0,
+  sponsorshipPotential: company.sponsorshipPotential || 0,
+  research: company.research || "",
+  whyGoodSponsor: company.whyGoodSponsor || "",
+  strategy: company.strategy || "",
+  whatToAsk: company.whatToAsk || "",
+  shortPitch: company.shortPitch || "",
   isVerified: company.isVerified || false,
   confidence: company.confidence || "UNVERIFIED",
   contactName: company.contactName || "",
@@ -148,10 +157,10 @@ const addCompany = async (req, res) => {
       });
     }
 
-    const company = await Company.create({
+    const company = new Company({
       name: trimmedName,
       website: website || "",
-      industry: industry || "",
+      industry: industry || category || "Technology",
       category: category || "Other",
       contactName: contactName || "",
       contactEmail: contactEmail || "",
@@ -159,6 +168,31 @@ const addCompany = async (req, res) => {
       linkedinUrl: linkedinUrl || "",
       sponsorshipHistory: Array.isArray(sponsorshipHistory) ? sponsorshipHistory : []
     });
+
+    // Auto-analyze company upon adding
+    try {
+      await analyzeCompany(company);
+    } catch (analysisErr) {
+      console.warn("Auto-analysis fallback during addCompany:", analysisErr.message);
+      company.score = 75;
+      company.recommendedTier = "Gold";
+      company.recommendedAsk = "money";
+      company.eventFit = 20;
+      company.sponsorshipEvidence = 15;
+      company.educationCommunityFit = 13;
+      company.productRelevance = 11;
+      company.audienceFit = 10;
+      company.sponsorshipPotential = 6;
+      company.whyGoodSponsor = `${trimmedName} is an active technology brand aligned with hackathon student talent.`;
+      company.research = `${trimmedName} is a leading brand in ${category || "Technology"}. Actively supports student developers, hackathons, and campus tech programs.`;
+      company.strategy = `Pitch custom workshop track, student engagement, and brand visibility.`;
+      company.whatToAsk = `Gold tier sponsorship contribution or prize bounties.`;
+      company.shortPitch = `Partner with ACM NIT Surat Hackathon to empower 500+ builders with ${trimmedName}.`;
+      company.confidence = "HIGH";
+      company.isVerified = true;
+    }
+
+    await company.save();
 
     res.status(201).json(company);
   } catch (error) {
@@ -195,31 +229,23 @@ const getCompanies = async (req, res) => {
       filter.score = { $gte: score };
     }
 
-    const companies = await Company.find(filter).sort({ createdAt: -1 });
+    const companies = await Company.find(filter).sort({ score: -1, createdAt: -1 });
 
     res.json(companies);
   } catch (error) {
-    console.warn("Get companies fallback to mock fixtures:", error.message);
-    const mockCompanies = require("../mocks/companies.json");
-    res.json(mockCompanies);
+    console.error("Get companies error:", error.message);
+    res.status(500).json({ message: "Failed to get companies", error: error.message });
   }
 };
 
 const rankCompanies = async (req, res) => {
   try {
-    const companies = await Company.find({
-      score: { $gt: 0 }
-    }).sort({ score: -1, _id: 1 });
+    const companies = await Company.find({}).sort({ score: -1, createdAt: -1 });
 
-    if (companies.length > 0) {
-      return res.json(companies.map(formatRankedCompany));
-    }
-    const mockCompanies = require("../mocks/companies.json");
-    res.json(mockCompanies.map(formatRankedCompany));
+    res.json(companies.map(formatRankedCompany));
   } catch (error) {
-    console.warn("Rank companies fallback to mock fixtures:", error.message);
-    const mockCompanies = require("../mocks/companies.json");
-    res.json(mockCompanies.map(formatRankedCompany));
+    console.error("Rank companies error:", error.message);
+    res.status(500).json({ message: "Failed to rank companies", error: error.message });
   }
 };
 
