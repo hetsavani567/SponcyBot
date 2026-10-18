@@ -2,6 +2,29 @@
 const Company = require("../models/company");
 const { analyzeCompany } = require("../services/sponsorIntelligence");
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const tierFromScore = (score) =>
+  score >= 90 ? "Platinum" :
+  score >= 75 ? "Gold" :
+  score >= 60 ? "Silver" : "Bronze";
+
+const MAX_TOP_LIMIT = 100;
+
+// returns the same site in the common URL spellings so duplicates are caught
+const websiteVariants = (website) => {
+  const bare = String(website).trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "");
+  if (!bare) return [];
+  const variants = [];
+  for (const proto of ["https://", "http://"]) {
+    for (const www of ["", "www."]) {
+      variants.push(`${proto}${www}${bare}`, `${proto}${www}${bare}/`);
+    }
+  }
+  variants.push(bare, `www.${bare}`);
+  return variants;
+};
+
 const getScoreBreakdown = (company) => ({
   eventFit: company.eventFit,
   sponsorshipEvidence: company.sponsorshipEvidence,
@@ -88,10 +111,7 @@ const research = async (req, res) => {
 
     company.score = Math.min(score, 100);
 
-    company.recommendedTier =
-      company.score >= 90 ? "Platinum" :
-      company.score >= 75 ? "Gold" :
-      company.score >= 60 ? "Silver" : "Bronze";
+    company.recommendedTier = tierFromScore(company.score);
 
     await company.save();
 
@@ -133,11 +153,11 @@ const addCompany = async (req, res) => {
 
     // Prevent duplicate outreach: check existing company by name (case-insensitive) or website
     const duplicateQuery = [
-      { name: { $regex: `^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }
+      { name: { $regex: `^${escapeRegex(trimmedName)}$`, $options: "i" } }
     ];
 
     if (website && String(website).trim()) {
-      duplicateQuery.push({ website: String(website).trim() });
+      duplicateQuery.push({ website: { $in: websiteVariants(website) } });
     }
 
     const existingCompany = await Company.findOne({ $or: duplicateQuery });
@@ -178,7 +198,7 @@ const getCompanies = async (req, res) => {
 
     if (category) {
       filter.category = {
-        $regex: `^${String(category)}$`,
+        $regex: `^${escapeRegex(category)}$`,
         $options: "i"
       };
     }
@@ -227,9 +247,9 @@ const getTopCompanies = async (req, res) => {
   try {
     const limit = Number(req.params.limit);
 
-    if (!Number.isInteger(limit) || limit < 1) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_TOP_LIMIT) {
       return res.status(400).json({
-        message: "Limit must be a positive integer"
+        message: `Limit must be an integer between 1 and ${MAX_TOP_LIMIT}`
       });
     }
 
@@ -361,6 +381,22 @@ const updateCompany = async (req, res) => {
       updates.name = updates.name.trim();
     }
 
+    if (updates.score !== undefined) {
+      const score = Number(updates.score);
+      if (!Number.isFinite(score) || score < 0 || score > 100) {
+        return res.status(400).json({ message: "score must be a number between 0 and 100" });
+      }
+      updates.score = score;
+      // keep the tier consistent with the score unless a tier was sent explicitly
+      if (updates.recommendedTier === undefined) {
+        updates.recommendedTier = tierFromScore(score);
+      }
+    }
+
+    if (updates.isVerified !== undefined && typeof updates.isVerified !== "boolean") {
+      return res.status(400).json({ message: "isVerified must be true or false" });
+    }
+
     const company = await Company.findByIdAndUpdate(
       id,
       { $set: updates },
@@ -379,6 +415,13 @@ const updateCompany = async (req, res) => {
     });
   } catch (error) {
     console.error("Update company error:", error.message);
+
+    if (error.name === "ValidationError" || error.name === "CastError") {
+      return res.status(400).json({
+        message: "Invalid company data",
+        error: error.message
+      });
+    }
 
     res.status(500).json({
       message: "Failed to update company"

@@ -41,6 +41,10 @@ const emailSchema = new mongoose.Schema(
       type: String,
       enum: ASK_TYPES,
       default: "money"
+    },
+    rejectionReason: {
+      type: String,
+      default: ""
     }
   },
   {

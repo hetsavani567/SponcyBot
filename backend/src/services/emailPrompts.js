@@ -9,19 +9,26 @@ const PRICES = {
   Silver: { inr: "₹75,000", usd: "$2,500" }
 };
 
-function getAskProfile(askType, { tier, tierAmount, silverAmount }) {
+function getAskProfile(askType, { tier, tierAmount, silverAmount, rangeInstruction, fallbackAmount }) {
+  const askLineMoney = rangeInstruction
+    ? `Ask for a ${tier} cash sponsorship, proposing a specific amount strictly inside the range ${rangeInstruction} tailored to the company's size and stage.`
+    : `Ask for a ${tier} cash sponsorship (${tierAmount}).`;
+
+  const fallbackMoney = fallbackAmount
+    ? `A lower tier (${fallbackAmount}) or custom contribution if ${tier} doesn't fit their current quarter`
+    : (tier === "Gold"
+        ? `Silver tier (${silverAmount}) if Gold doesn't fit their current quarter`
+        : "A smaller contribution is welcome too, and we can tailor it to their budget");
+
   const profiles = {
     money: {
-      askLine: `Ask for a ${tier} cash sponsorship (${tierAmount}).`,
+      askLine: askLineMoney,
       deliverables: [
         "A dedicated 45-minute hands-on workshop and a custom prize bounty track",
         "Full opt-in resume database of all 500 finalists for engineering and DevRel hiring",
         "Prime logo branding across stage, website, lanyards, and our 1,500+ member Discord"
       ],
-      fallback:
-        tier === "Gold"
-          ? `Silver tier (${silverAmount}) if Gold doesn't fit their current quarter`
-          : "A smaller contribution is welcome too, and we can tailor it to their budget"
+      fallback: fallbackMoney
     },
     goodies: {
       askLine:
@@ -44,7 +51,7 @@ function getAskProfile(askType, { tier, tierAmount, silverAmount }) {
       fallback: "A smaller credit allocation works too"
     }
   };
-  return profiles[askType];
+  return profiles[askType] || profiles.money;
 }
 
 const WORD_LIMITS = {
@@ -109,7 +116,26 @@ function buildEmailPrompt(company, options = {}) {
   const currencySymbol = isIndianCompany ? "₹" : "$";
   const timeZone = isIndianCompany ? "IST" : "EST";
 
-  const profile = getAskProfile(askType, { tier, tierAmount, silverAmount });
+  const askAmountRange = options.askAmountRange || (options.options && options.options.askAmountRange) || null;
+  let rangeInstruction = "";
+  let pricingLine = "";
+  let fallbackAmount = "";
+
+  if (
+    askAmountRange &&
+    typeof askAmountRange.min === "number" &&
+    typeof askAmountRange.max === "number"
+  ) {
+    const minFormatted = `₹${askAmountRange.min.toLocaleString("en-IN")}`;
+    const maxFormatted = `₹${askAmountRange.max.toLocaleString("en-IN")}`;
+    rangeInstruction = `${minFormatted} to ${maxFormatted}`;
+    pricingLine = `- Recommended Ask Range (${askAmountRange.label || tier} Tier): ${minFormatted} – ${maxFormatted}. Propose a specific sponsorship amount strictly INSIDE this range, tailored to the company's size/stage (established enterprises near ${maxFormatted}, growing mid-stage in the middle, startups/early-stage near ${minFormatted}). Never use a generic or identical figure across companies.`;
+    fallbackAmount = `₹${Math.round(askAmountRange.min * 0.7).toLocaleString("en-IN")}`;
+  } else {
+    pricingLine = `- Pricing (${currencySymbol}): ${tier} = ${tierAmount}`;
+  }
+
+  const profile = getAskProfile(askType, { tier, tierAmount, silverAmount, rangeInstruction, fallbackAmount });
   const urgency =
     tier === "Gold"
       ? `Gold partnerships are capped at 3 sponsors and confirmations close on ${urgencyDate}`
@@ -120,7 +146,7 @@ function buildEmailPrompt(company, options = {}) {
   const strategy = company.strategy || "";
   const whatToAsk = company.whatToAsk || "";
 
-  const signOff = `Best regards,\n${organizerOrg}`;
+  const signOff = "Best regards,\nACM NIT Surat";
   const wordLimit = WORD_LIMITS[type] || WORD_LIMITS.initial;
 
   let taskObjective = "";
@@ -184,7 +210,7 @@ Target Sponsor Context:
 - Contact: ${company.contactName || "Team"} (${company.contactRole || "Developer Relations"})
 - Recommended Tier: ${tier}
 - Recommended Ask: ${askType}
-- Pricing (${currencySymbol}): ${tier} = ${tierAmount}
+${pricingLine}
 - Time Zone: ${timeZone}
 - Verifiable Intelligence from Research:
 ${research ? research : `${brandName} developer tooling and student credit programs`}
@@ -210,11 +236,15 @@ CRITICAL OUTPUT RULES:
 1. GREETING AND HOOK: Start the body with exactly "${greeting}" on its own line. The first sentence after it must reference ${brandName}'s real tooling, developer credits, or past community support from the research. Never say "I hope this email finds you well" or "I am writing to".
 2. ORGANISER CREDIBILITY WITH HARD NUMBERS: Cite "${organizerOrg}" and use the proof points above instead of adjectives.
 ${structureRule}
-4. ASK ACCURACY: Ask only for what the Recommended Ask describes. Use ${currencySymbol}, time zone ${timeZone}, and the conversational name "${brandName}" (no "Pvt Ltd" in prose).
+4. ASK ACCURACY: Ask only for what the Recommended Ask describes. ${
+  askType === "money" && rangeInstruction
+    ? `Propose a single specific figure strictly INSIDE the range ${rangeInstruction} tailored to ${brandName}'s scale and stage. Never use an identical default amount across companies.`
+    : ""
+} Use ${currencySymbol}, time zone ${timeZone}, and the conversational name "${brandName}" (no "Pvt Ltd" in prose).
 5. LOW-FRICTION CTA: Offer the options above, with the call and the deck link each appearing once.
 6. REAL REASON TO ACT NOW: State that ${urgency}.
 7. WORD COUNT: Keep the email body ${wordLimit}, clean and skimmable.
-8. ABSOLUTELY NO PLACEHOLDERS OR PERSONAL NAMES: Never output [Your Name] or [Link]. Do NOT include any individual's personal name. End the body with this exact institutional sign-off, using line breaks:
+8. ABSOLUTELY NO PLACEHOLDERS OR PERSONAL NAMES: Never output [Your Name], [Link], or ANY person's name (e.g. absolutely no Mahathi, John, or individual student names). Do NOT sign off with any person's name. End the body strictly with this exact institutional sign-off, using line breaks:
 ${signOff}
 9. Return ONLY valid raw JSON with no markdown code fences:
 {

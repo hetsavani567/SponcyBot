@@ -13,6 +13,10 @@ const createTeamMember = async (req, res) => {
     }
 
     const trimmedEmail = String(email).trim().toLowerCase();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ message: "Email format is invalid" });
+    }
     const existing = await TeamMember.findOne({ email: trimmedEmail });
     if (existing) {
       return res.status(409).json({

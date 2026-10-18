@@ -11,6 +11,22 @@ const {
 const mockCompanies = require("../mocks/companies.json");
 
 /**
+ * Ask-amount ranges per tier so the sponsorship ask differs per company.
+ * EDIT these numbers (INR) to match your event budget. The email prompt
+ * in emailGenerationService must read options.askAmountRange to use it.
+ */
+const TIER_ASK_RANGES = {
+  Platinum: { min: 100000, max: 200000, label: "Platinum" },
+  Gold: { min: 50000, max: 100000, label: "Gold" },
+  Silver: { min: 25000, max: 50000, label: "Silver" },
+  Bronze: { min: 10000, max: 25000, label: "Bronze" }
+};
+
+function getAskRange(company) {
+  return TIER_ASK_RANGES[company?.recommendedTier] || TIER_ASK_RANGES.Silver;
+}
+
+/**
  * Helper to fetch company from DB or fallback mock for solo testing
  */
 async function resolveCompany(companyId) {
@@ -63,7 +79,7 @@ const generateEmail = async (req, res) => {
 
     // Resolve or create a DB company if mock was used and user passed an ObjectId
     let targetCompanyId = company._id;
-    if (!targetCompanyId) {
+    if (!targetCompanyId || !mongoose.Types.ObjectId.isValid(targetCompanyId)) {
       // If mock has no ObjectId, either create one or find by name in DB
       let dbComp = await Company.findOne({ name: company.name });
       if (!dbComp) {
@@ -92,7 +108,8 @@ const generateEmail = async (req, res) => {
     if ((type === "followup1" || type === "followup2") && (!prevSubj || !prevBdy) && targetCompanyId) {
       const priorEmail = await Email.findOne({
         companyId: targetCompanyId,
-        type: type === "followup2" ? { $in: ["initial", "followup1"] } : "initial"
+        type: type === "followup2" ? { $in: ["initial", "followup1"] } : "initial",
+        status: { $in: ["SENT", "APPROVED"] }
       }).sort({ createdAt: -1 });
 
       if (priorEmail) {
@@ -102,12 +119,14 @@ const generateEmail = async (req, res) => {
     }
 
     const draft = await generateEmailDraft(company, {
+      ...eventDetails,
+      ...extraOptions,
+      // explicit values last so extra options can't override them
       type,
       customInstructions,
       previousSubject: prevSubj,
       previousBody: prevBdy,
-      ...eventDetails,
-      ...extraOptions
+      askAmountRange: extraOptions.askAmountRange || getAskRange(company)
     });
 
     const { email, emailVersion } = await createInitialEmail({
@@ -177,7 +196,8 @@ const regenerateEmail = async (req, res) => {
   customInstructions,
   previousSubject: email.subject,
   previousBody: email.body,
-  isRegeneration: true
+  isRegeneration: true,
+  askAmountRange: getAskRange(companyData)
 });
     const { email: updatedEmail, emailVersion } = await recordRegeneratedVersion({
       emailId: email._id,
@@ -285,7 +305,15 @@ const listEmails = async (req, res) => {
 
     if (status) filter.status = status;
     if (type) filter.type = type;
-    if (companyId) filter.companyId = companyId;
+    if (companyId) {
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid companyId format"
+        });
+      }
+      filter.companyId = companyId;
+    }
 
     const emails = await Email.find(filter).populate("companyId").sort({ updatedAt: -1 });
 
@@ -408,13 +436,17 @@ const rejectEmail = async (req, res) => {
 
     const { reason } = req.body;
 
+    const rejectionReason = reason || "Rejected by reviewer";
+
     email.status = "DRAFT";
+    // NOTE: add `rejectionReason: String` to the Email schema or this is dropped silently
+    email.rejectionReason = rejectionReason;
     await email.save();
 
     return res.status(200).json({
       success: true,
       message: "Email rejected and moved back to draft",
-      data: { email, reason: reason || "Rejected by reviewer" }
+      data: { email, reason: rejectionReason }
     });
   } catch (error) {
     console.error("Error in rejectEmail:", error);

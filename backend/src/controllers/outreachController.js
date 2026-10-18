@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
 const { Outreach, OUTREACH_STATUSES } = require("../models/outreach");
+const { Email } = require("../models/email");
 const OutreachEvent = require("../models/outreachEvent");
 const TeamMember = require("../models/teamMember");
 const Company = require("../models/company");
@@ -11,7 +11,10 @@ const {
   recordEvent
 } = require("../services/outreachService");
 
-const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+// strict 24-hex check (mongoose.isValidObjectId also accepts any 12-char string)
+const isValidObjectId = (id) => /^[0-9a-fA-F]{24}$/.test(String(id || ""));
+
+const MAX_HISTORY_LIMIT = 100;
 
 const createOutreach = async (req, res) => {
   try {
@@ -23,6 +26,21 @@ const createOutreach = async (req, res) => {
 
     if (!memberId || !isValidObjectId(memberId)) {
       return res.status(400).json({ message: "Valid memberId is required" });
+    }
+
+    if (emailId !== null && emailId !== undefined && emailId !== "") {
+      if (!isValidObjectId(emailId)) {
+        return res.status(400).json({ message: "emailId must be a valid ID" });
+      }
+      const linkedEmail = await Email.findById(emailId);
+      if (!linkedEmail) {
+        return res.status(404).json({ message: "Email not found" });
+      }
+      if (!["APPROVED", "SENT"].includes(linkedEmail.status)) {
+        return res.status(409).json({
+          message: `Email must be APPROVED before outreach (current status: ${linkedEmail.status})`
+        });
+      }
     }
 
     const company = await Company.findById(companyId);
@@ -52,7 +70,7 @@ const createOutreach = async (req, res) => {
     const outreach = await Outreach.create({
       companyId,
       memberId,
-      emailId,
+      emailId: emailId || null,
       status: "DRAFT",
       followUpCount: 0,
       notes
@@ -76,6 +94,11 @@ const createOutreach = async (req, res) => {
     res.status(201).json(populatedOutreach);
   } catch (error) {
     console.error("Create outreach error:", error);
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate outreach prevented: an active outreach already exists for this company"
+      });
+    }
     res.status(500).json({ message: "Failed to create outreach", error: error.message });
   }
 };
@@ -282,7 +305,7 @@ const getCommsHistory = async (req, res) => {
       .populate("companyId", "name website")
       .populate("memberId", "name email")
       .sort({ createdAt: -1 })
-      .limit(Number(limit));
+      .limit(Math.min(Math.max(parseInt(limit, 10) || 50, 1), MAX_HISTORY_LIMIT));
 
     res.json({
       count: events.length,
@@ -306,7 +329,16 @@ const getDashboardStatsHandler = async (req, res) => {
 
 const handleP4Webhook = async (req, res) => {
   try {
+    const secret = process.env.P4_WEBHOOK_SECRET;
+    if (secret && req.get("x-webhook-secret") !== secret) {
+      return res.status(401).json({ message: "Unauthorized webhook call" });
+    }
+
     const { event, emailId, threadId, label, notes = "" } = req.body || {};
+
+    if (!["sent", "reply"].includes(event)) {
+      return res.status(400).json({ message: "event must be 'sent' or 'reply'" });
+    }
 
     let outreach = null;
     if (threadId) {
@@ -327,6 +359,12 @@ const handleP4Webhook = async (req, res) => {
         threadId,
         metadata: { emailId, notes: notes || "Email sent via Gmail" }
       });
+
+      // keep the Email document in sync so SENT guards in the email module work
+      const sentEmailId = emailId || outreach.emailId;
+      if (sentEmailId && isValidObjectId(sentEmailId)) {
+        await Email.findByIdAndUpdate(sentEmailId, { status: "SENT" });
+      }
     } else if (event === "reply") {
       let targetStatus = "WAITING FOR REPLY";
       const normalizedLabel = String(label || "").toLowerCase();

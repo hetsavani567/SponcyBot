@@ -18,7 +18,9 @@ router.post("/edit", editEmail);
 router.get("/pending-approval", getPendingApprovalEmails);
 // Approval Queue endpoints for Person 4
 router.patch("/:id/approve", approveEmail);
+router.post("/:id/approve", approveEmail);
 router.patch("/:id/reject", rejectEmail);
+router.post("/:id/reject", rejectEmail);
 router.get("/:id", getEmail);
 router.get("/", listEmails);
 

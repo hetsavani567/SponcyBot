@@ -87,8 +87,24 @@ const outreachSchema = new mongoose.Schema(
   }
 );
 
+// Active statuses (everything except CLOSED and DECLINED)
+const ACTIVE_STATUSES = OUTREACH_STATUSES.filter(
+  (status) => !["CLOSED", "DECLINED"].includes(status)
+);
+
 // Compound index to help efficiently find active outreach for a company
 outreachSchema.index({ companyId: 1, status: 1 });
+
+// Unique partial index to ensure no duplicate active outreach per company
+outreachSchema.index(
+  { companyId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ACTIVE_STATUSES }
+    }
+  }
+);
 
 module.exports = {
   Outreach: mongoose.model("Outreach", outreachSchema),

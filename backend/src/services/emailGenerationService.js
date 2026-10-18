@@ -66,6 +66,14 @@ function parseAndValidateEmailResponse(rawText) {
     throw new Error(`Body contains unpopulated placeholder: "${bodyPlaceholder[0]}"`);
   }
 
+  // 5. Enforce institutional sign-off with no personal names
+  const signOffIdx = body.search(/Best regards,\s*(?:\n|\r\n)?\s*ACM NIT Surat/i);
+  if (signOffIdx !== -1) {
+    body = body.slice(0, signOffIdx).trimEnd() + "\n\nBest regards,\nACM NIT Surat";
+  } else if (/Best regards,/i.test(body)) {
+    body = body.replace(/Best regards,[\s\S]*$/i, "Best regards,\nACM NIT Surat");
+  }
+
   return { subject, body };
 }
 
