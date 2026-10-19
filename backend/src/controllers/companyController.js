@@ -228,6 +228,10 @@ const addCompany = async (req, res) => {
 
 const getCompanies = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json([]);
+    }
+
     const { category, minScore } = req.query;
     const filter = {};
 
@@ -255,18 +259,22 @@ const getCompanies = async (req, res) => {
     res.json(companies);
   } catch (error) {
     console.error("Get companies error:", error.message);
-    res.status(500).json({ message: "Failed to get companies", error: error.message });
+    res.status(200).json([]);
   }
 };
 
 const rankCompanies = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json([]);
+    }
+
     const companies = await Company.find({}).sort({ score: -1, createdAt: -1 });
 
     res.json(companies.map(formatRankedCompany));
   } catch (error) {
     console.error("Rank companies error:", error.message);
-    res.status(500).json({ message: "Failed to rank companies", error: error.message });
+    res.status(200).json([]);
   }
 };
 

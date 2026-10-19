@@ -82,6 +82,10 @@ const createOutreach = async (req, res) => {
 
 const getAllOutreach = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.json([]);
+    }
+
     const { status, memberId, companyId } = req.query;
     const filter = {};
 
@@ -111,6 +115,10 @@ const getAllOutreach = async (req, res) => {
 
 const getPendingFollowUps = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.json([]);
+    }
+
     const now = new Date();
 
     const pending = await Outreach.find({

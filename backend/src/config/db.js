@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
-// Standard 10s buffer timeout for cloud/cold-start stability
-mongoose.set("bufferTimeoutMS", 10000);
+// Fast 2s buffer timeout prevents hanging requests during cloud cold starts or network reconnects
+mongoose.set("bufferTimeoutMS", 2000);
 
 /**
  * Connect to MongoDB Atlas or local MongoDB instance

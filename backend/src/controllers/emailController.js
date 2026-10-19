@@ -275,6 +275,14 @@ const getEmail = async (req, res) => {
  */
 const listEmails = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
+
     const { status, type, companyId } = req.query;
     const filter = {};
 

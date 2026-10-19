@@ -1,4 +1,5 @@
 const { google } = require("googleapis");
+const mongoose = require("mongoose");
 const GmailToken = require("../models/gmailToken");
 
 // ─── OAuth2 Client ─────────────────────────────────────────────────────────
@@ -141,8 +142,17 @@ const getAuthenticatedClient = async () => {
 
 // ─── Check Auth Status ───────────────────────────────────────────────────────
 const getAuthStatus = async () => {
-  const tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
   const hasGoogleCredentials = Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET);
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      authorized: false,
+      email: null,
+      isDemo: false,
+      hasGoogleCredentials,
+      expiryDate: null
+    };
+  }
+  const tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
   if (!tokenDoc) {
     return {
       authorized: false,

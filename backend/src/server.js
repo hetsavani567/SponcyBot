@@ -38,6 +38,14 @@ const primaryPublicDir = availablePublicDirs[0] || path.join(process.cwd(), "bac
 app.use(cors());
 app.use(express.json());
 
+// Explicit static routes for /assets to guarantee JS/CSS bundles always serve correctly
+availablePublicDirs.forEach(dir => {
+  const assetsDir = path.join(dir, "assets");
+  if (fs.existsSync(assetsDir)) {
+    app.use("/assets", express.static(assetsDir));
+  }
+});
+
 // Serve static assets from all available frontend directories
 availablePublicDirs.forEach(dir => {
   app.use(express.static(dir, {
@@ -52,15 +60,24 @@ if (!availablePublicDirs.includes(backendPublic) && fs.existsSync(backendPublic)
   app.use(express.static(backendPublic, { maxAge: "1d", index: false }));
 }
 
-// Root route: serves frontend single-page application
-app.get("/", (req, res) => {
+// Helper to resolve SPA index.html
+const getIndexPath = () => {
   const targetHtml = path.join(primaryPublicDir, "index.html");
   if (fs.existsSync(targetHtml)) {
-    return res.sendFile(targetHtml);
+    return targetHtml;
   }
   const fallbackHtml = path.join(process.cwd(), "backend/public/index.html");
   if (fs.existsSync(fallbackHtml)) {
-    return res.sendFile(fallbackHtml);
+    return fallbackHtml;
+  }
+  return null;
+};
+
+// Root route: serves frontend single-page application
+app.get("/", (req, res) => {
+  const target = getIndexPath();
+  if (target) {
+    return res.sendFile(target);
   }
   res.status(200).send("<!DOCTYPE html><html><body style='background:#020617;color:#fff;font-family:sans-serif;padding:40px'><h1>SponcyBot Engine Active</h1><p>Building production assets...</p></body></html>");
 });
@@ -84,6 +101,34 @@ app.use("/gmail", gmailRoutes);
 
 // Database Connection
 connectDB();
+
+// SPA Fallback Middleware: serve index.html for all browser GET navigation requests
+app.use((req, res, next) => {
+  if (req.method !== "GET") {
+    return next();
+  }
+
+  const isApi =
+    req.path.startsWith("/companies") ||
+    req.path.startsWith("/gmail") ||
+    req.path.startsWith("/outreach") ||
+    req.path.startsWith("/llm") ||
+    req.path.startsWith("/emails") ||
+    req.path.startsWith("/team-members") ||
+    req.path.startsWith("/api") ||
+    req.path.startsWith("/health") ||
+    req.path.startsWith("/assets");
+
+  if (isApi || !req.accepts("html")) {
+    return next();
+  }
+
+  const target = getIndexPath();
+  if (target) {
+    return res.sendFile(target);
+  }
+  next();
+});
 
 // 404 handler (returns JSON for API requests, falls back to index.html for SPA routes)
 app.use(notFoundHandler(primaryPublicDir));
