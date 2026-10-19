@@ -8,7 +8,6 @@ const TeamMember = require("../models/teamMember");
 const { approveEmailWithLog, rejectEmailWithLog } = require("./approvalService");
 const { sendEmailViaGmail } = require("./gmailService");
 const { updateOutreachStatus, processFollowUp } = require("./outreachService");
-const mockCompanies = require("../mocks/companies.json");
 
 /**
  * Orchestrator: Executes an end-to-end walkthrough of the 12-step SponcyBot lifecycle.
@@ -27,7 +26,6 @@ const runSimulationFlow = async ({
 
   // ── Step 1 to 5: Sponsor Intelligence ────────────────────────────────────
   logStep(1, "Add Company", "Research", `Registering sponsor: "${companyName}"`);
-  const mockTemplate = mockCompanies[0] || {};
 
   const company = {
     _id: new mongoose.Types.ObjectId(),

@@ -1,10 +1,15 @@
 require("dotenv").config();
 const { generateEmailDraft } = require("../services/emailGenerationService");
-const mockCompanies = require("../mocks/companies.json");
+const company = {
+  name: "Acme Cloud Corp",
+  industry: "Cloud & DevTools",
+  category: "Cloud & Developer Tools",
+  recommendedTier: "Gold",
+  recommendedAsk: "infra"
+};
 
 async function testGeneration() {
   console.log("Testing live AI Email Generation with Gemini...");
-  const company = mockCompanies[0];
   console.log(`Target Sponsor: ${company.name} (${company.recommendedTier} tier, ${company.recommendedAsk} ask)`);
 
   try {

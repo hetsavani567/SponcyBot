@@ -3,6 +3,8 @@ const router = express.Router();
 
 const {
   startOAuth,
+  connectDemo,
+  disconnectOAuth,
   oAuthCallback,
   getOAuthStatus,
   sendEmail,
@@ -18,6 +20,10 @@ const { sendGuard } = require("../middleware/sendGuard");
 // ── Phase 1: OAuth ──────────────────────────────────────────────────────────
 // Step 1: Browser/Postman hits this to start Gmail consent flow
 router.get("/oauth/start", startOAuth);
+// 1-Click demo connect (ideal for hackathon demos without GCP client ID)
+router.post("/oauth/demo-connect", connectDemo);
+// Disconnect current Gmail account
+router.post("/oauth/disconnect", disconnectOAuth);
 // Step 2: Google redirects here after user approves
 router.get("/oauth/callback", oAuthCallback);
 // Health check: is Gmail connected?

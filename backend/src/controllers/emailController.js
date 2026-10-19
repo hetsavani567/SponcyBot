@@ -13,26 +13,18 @@ const {
   rejectEmailWithLog,
   getApprovalHistory
 } = require("../services/approvalService");
-const mockCompanies = require("../mocks/companies.json");
 
 /**
- * Helper to fetch company from DB or fallback mock for solo testing
+ * Helper to fetch company from DB
  */
 async function resolveCompany(companyId) {
-  let company = null;
+  if (!companyId) return null;
 
   if (mongoose.Types.ObjectId.isValid(companyId)) {
-    company = await Company.findById(companyId);
+    return Company.findById(companyId);
   }
 
-  if (!company) {
-    // Check mock list by id or name
-    company = mockCompanies.find(
-      (m) => m.id === companyId || m._id === companyId || m.name === companyId
-    );
-  }
-
-  return company;
+  return Company.findOne({ name: String(companyId).trim() });
 }
 
 /**
@@ -66,30 +58,7 @@ const generateEmail = async (req, res) => {
       });
     }
 
-    // Resolve or create a DB company if mock was used and user passed an ObjectId
-    let targetCompanyId = company._id;
-    if (!targetCompanyId) {
-      // If mock has no ObjectId, either create one or find by name in DB
-      let dbComp = await Company.findOne({ name: company.name });
-      if (!dbComp) {
-        dbComp = await Company.create({
-          name: company.name,
-          website: company.website,
-          industry: company.industry,
-          category: company.category,
-          research: company.research,
-          score: company.score || 0,
-          recommendedTier: company.recommendedTier || "Silver",
-          recommendedAsk: company.recommendedAsk || "money",
-          shortPitch: company.shortPitch || "",
-          strategy: company.strategy || "",
-          whatToAsk: company.whatToAsk || "",
-          contactName: company.contactName || "",
-          contactRole: company.contactRole || ""
-        });
-      }
-      targetCompanyId = dbComp._id;
-    }
+    const targetCompanyId = company._id;
 
     // If generating a follow-up, auto-retrieve earlier email context if not explicitly provided
     let prevSubj = previousSubject || "";

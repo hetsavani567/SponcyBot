@@ -11,10 +11,12 @@ const {
   updateStatusHandler,
   getCommsHistory,
   getDashboardStatsHandler,
-  handleGmailWebhook
+  handleGmailWebhook,
+  exportOutreachCSV
 } = require("../controllers/outreachController");
 
 // Exact routes first (to prevent :id collision)
+router.get("/export/csv", exportOutreachCSV);
 router.get("/pending-followups", getPendingFollowUps);
 router.get("/history", getCommsHistory);
 router.get("/stats", getDashboardStatsHandler);

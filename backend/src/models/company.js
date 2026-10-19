@@ -124,6 +124,17 @@ const companySchema = new mongoose.Schema(
             type: String,
             default: ""
         },
+        discoveredContacts: {
+            type: [
+                {
+                    role: { type: String, default: "Sponsorships" },
+                    email: { type: String, default: "" },
+                    confidence: { type: String, default: "HIGH" },
+                    source: { type: String, default: "Domain Discovery" }
+                }
+            ],
+            default: []
+        },
         sponsorshipHistory: {
             type: [
                 {

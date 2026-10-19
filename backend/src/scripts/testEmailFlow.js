@@ -10,7 +10,6 @@ const {
   recordHumanEdit,
   getEmailWithVersions
 } = require("../services/emailVersioningService");
-const mockCompanies = require("../mocks/companies.json");
 
 async function runEndToEndTest() {
   console.log("=== AI EMAIL ENGINE END-TO-END TEST ===\n");
