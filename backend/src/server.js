@@ -131,11 +131,19 @@ const getIndexPath = () => {
   return null;
 };
 
-// Root route: serves frontend single-page application
+// Helper to serve index.html with strict cache-busting headers so deployments work without hard refresh
+const sendIndexHtml = (res, targetHtml) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  return res.sendFile(targetHtml);
+};
+
+// Root route: serves frontend single-page application with cache-busting headers
 app.get("/", (req, res) => {
   const target = getIndexPath();
   if (target) {
-    return res.sendFile(target);
+    return sendIndexHtml(res, target);
   }
   res.status(200).send("<!DOCTYPE html><html><body style='background:#020617;color:#fff;font-family:sans-serif;padding:40px'><h1>SponcyBot Engine Active</h1><p>Building production assets...</p></body></html>");
 });
@@ -183,7 +191,7 @@ app.use((req, res, next) => {
 
   const target = getIndexPath();
   if (target) {
-    return res.sendFile(target);
+    return sendIndexHtml(res, target);
   }
   next();
 });
