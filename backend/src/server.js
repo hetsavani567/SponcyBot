@@ -17,33 +17,52 @@ const gmailRoutes = require("./routes/gmailRoutes");
 
 const app = express();
 
-// Determine static frontend path: prioritize compiled production React build
-const frontendDist = path.join(__dirname, "../../frontend/dist");
-const backendPublic = path.join(__dirname, "../public");
-const frontendSrc = path.join(__dirname, "../../frontend");
+// Determine static frontend path: check process.cwd() (cloud hosts/Vercel) and __dirname (local dev)
+const candidateDirs = [
+  path.join(process.cwd(), "frontend/dist"),
+  path.join(process.cwd(), "backend/public"),
+  path.join(process.cwd(), "public"),
+  path.join(__dirname, "../../frontend/dist"),
+  path.join(__dirname, "../public"),
+  path.join(__dirname, "public"),
+  path.join(__dirname, "../../frontend")
+];
 
-const publicPath = fs.existsSync(path.join(frontendDist, "index.html"))
-  ? frontendDist
-  : fs.existsSync(path.join(backendPublic, "index.html"))
-    ? backendPublic
-    : frontendSrc;
+const availablePublicDirs = candidateDirs.filter(dir =>
+  fs.existsSync(path.join(dir, "index.html"))
+);
+
+const primaryPublicDir = availablePublicDirs[0] || path.join(process.cwd(), "backend/public");
 
 // Global Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Serve static assets from primary and fallback public folders
-app.use(express.static(publicPath));
-if (publicPath !== backendPublic && fs.existsSync(backendPublic)) {
-  app.use(express.static(backendPublic));
+// Serve static assets from all available frontend directories
+availablePublicDirs.forEach(dir => {
+  app.use(express.static(dir, {
+    maxAge: "1d",
+    index: false
+  }));
+});
+
+// Always serve backend/public as fallback static if not already included
+const backendPublic = path.join(process.cwd(), "backend/public");
+if (!availablePublicDirs.includes(backendPublic) && fs.existsSync(backendPublic)) {
+  app.use(express.static(backendPublic, { maxAge: "1d", index: false }));
 }
 
 // Root route: serves frontend single-page application
 app.get("/", (req, res) => {
-  const targetHtml = fs.existsSync(path.join(publicPath, "index.html"))
-    ? path.join(publicPath, "index.html")
-    : path.join(backendPublic, "index.html");
-  res.sendFile(targetHtml);
+  const targetHtml = path.join(primaryPublicDir, "index.html");
+  if (fs.existsSync(targetHtml)) {
+    return res.sendFile(targetHtml);
+  }
+  const fallbackHtml = path.join(process.cwd(), "backend/public/index.html");
+  if (fs.existsSync(fallbackHtml)) {
+    return res.sendFile(fallbackHtml);
+  }
+  res.status(200).send("<!DOCTYPE html><html><body style='background:#020617;color:#fff;font-family:sans-serif;padding:40px'><h1>SponcyBot Engine Active</h1><p>Building production assets...</p></body></html>");
 });
 
 // Health check endpoint
@@ -67,7 +86,7 @@ app.use("/gmail", gmailRoutes);
 connectDB();
 
 // 404 handler (returns JSON for API requests, falls back to index.html for SPA routes)
-app.use(notFoundHandler(publicPath));
+app.use(notFoundHandler(primaryPublicDir));
 
 // Centralized JSON Error Handler
 app.use(errorHandler);
@@ -77,7 +96,7 @@ const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== "test") {
   app.listen(PORT, () => {
     console.log(`[SponcyBot] Server running on port ${PORT}`);
-    console.log(`[SponcyBot] Serving frontend from: ${publicPath}`);
+    console.log(`[SponcyBot] Serving frontend from: ${primaryPublicDir}`);
   });
 }
 

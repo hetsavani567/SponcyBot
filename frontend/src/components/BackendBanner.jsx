@@ -1,7 +1,8 @@
 import React from 'react';
 
-export default function BackendBanner({ message, onRetry }) {
-  if (!message) return null;
+export default function BackendBanner({ message, errorMessage, visible, onRetry }) {
+  const displayMsg = message || errorMessage;
+  if (visible === false || !displayMsg) return null;
 
   return (
     <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
