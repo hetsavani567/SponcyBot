@@ -363,6 +363,71 @@ const handleGmailWebhook = async (req, res) => {
   }
 };
 
+/**
+ * GET /outreach/export/csv
+ * Exports the complete Outreach Tracker to a standard CSV for Google Sheets / Excel import
+ */
+const exportOutreachCSV = async (req, res) => {
+  try {
+    const list = await Outreach.find()
+      .populate("companyId")
+      .populate("memberId")
+      .sort({ createdAt: -1 });
+
+    const escapeCSV = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      "Company Name",
+      "Website",
+      "Category",
+      "Recommended Tier",
+      "Recommended Ask",
+      "Status",
+      "Assigned Member",
+      "Member Email",
+      "Follow-ups Sent",
+      "Max Follow-ups",
+      "Next Scheduled Date",
+      "Last Contacted Date",
+      "Meeting Link",
+      "Meeting Scheduled At",
+      "Notes"
+    ];
+
+    const rows = list.map((o) => [
+      escapeCSV(o.companyId?.name || "Unknown Company"),
+      escapeCSV(o.companyId?.website || ""),
+      escapeCSV(o.companyId?.category || "Other"),
+      escapeCSV(o.companyId?.recommendedTier || "Silver"),
+      escapeCSV(o.companyId?.recommendedAsk || "money"),
+      escapeCSV(o.status),
+      escapeCSV(o.memberId?.name || "Unassigned"),
+      escapeCSV(o.memberId?.email || ""),
+      escapeCSV(o.followUpCount || 0),
+      escapeCSV(2),
+      escapeCSV(o.nextFollowUpAt ? new Date(o.nextFollowUpAt).toISOString().split("T")[0] : ""),
+      escapeCSV(o.lastContactedAt ? new Date(o.lastContactedAt).toISOString().split("T")[0] : ""),
+      escapeCSV(o.meetingLink || ""),
+      escapeCSV(o.meetingScheduledAt ? new Date(o.meetingScheduledAt).toLocaleString() : ""),
+      escapeCSV(o.notes || "")
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+
+    const filename = `SponcyBot_Outreach_Tracker_${new Date().toISOString().split("T")[0]}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.status(200).send(csvContent);
+  } catch (error) {
+    console.error("Export outreach CSV error:", error);
+    res.status(500).json({ message: "Failed to export CSV", error: error.message });
+  }
+};
+
 module.exports = {
   createOutreach,
   getAllOutreach,
@@ -373,5 +438,6 @@ module.exports = {
   updateStatusHandler,
   getCommsHistory,
   getDashboardStatsHandler,
-  handleGmailWebhook
+  handleGmailWebhook,
+  exportOutreachCSV
 };

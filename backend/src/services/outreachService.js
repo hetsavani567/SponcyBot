@@ -206,7 +206,7 @@ const getStats = async () => {
     };
   }
 
-  const allOutreaches = await Outreach.find();
+  const allOutreaches = await Outreach.find().populate("companyId", "recommendedTier recommendedAsk");
   const total = allOutreaches.length;
 
   const statusCounts = {};
@@ -215,6 +215,7 @@ const getStats = async () => {
   let totalFollowUpsSent = 0;
   let repliesCount = 0;
   let interestedOrMeetingCount = 0;
+  let fundsSecuredINR = 0;
   const now = new Date();
   let pendingFollowUpsCount = 0;
 
@@ -228,6 +229,9 @@ const getStats = async () => {
 
     if (["INTERESTED", "MEETING"].includes(o.status)) {
       interestedOrMeetingCount++;
+      const tier = o.companyId?.recommendedTier || "Silver";
+      const tierVal = { Platinum: 250000, Gold: 150000, Silver: 75000, Bronze: 25000 }[tier] || 75000;
+      fundsSecuredINR += tierVal;
     }
 
     if (
@@ -251,7 +255,8 @@ const getStats = async () => {
     repliesReceived: repliesCount,
     responseRatePercent: responseRate,
     conversionsCount: interestedOrMeetingCount,
-    conversionRatePercent: conversionRate
+    conversionRatePercent: conversionRate,
+    fundsSecuredINR
   };
 };
 

@@ -94,6 +94,11 @@ export default function OutreachTab({
     }
   };
 
+  const handleExportCSV = () => {
+    onShowToast('Downloading Outreach Tracker CSV for Google Sheets...', 'info');
+    window.open('/outreach/export/csv', '_blank');
+  };
+
   return (
     <section className="space-y-4">
       {/* Top Controls */}
@@ -109,6 +114,13 @@ export default function OutreachTab({
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs text-white rounded-lg font-medium transition shadow-sm flex items-center space-x-1"
           >
             <span>+ Assign Sponsor</span>
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg border border-emerald-500/30 text-xs font-medium transition shadow-sm flex items-center space-x-1"
+            title="Download full outreach tracker CSV for Google Sheets or Excel"
+          >
+            <span>📊 Export to Sheets / CSV</span>
           </button>
           <button
             onClick={handlePollReplies}
