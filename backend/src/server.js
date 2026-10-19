@@ -1,16 +1,15 @@
-require("dotenv").config();
-
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
-const { connectDB } = require("./config/db");
+const connectDB = require("./config/db");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
-// Route imports
-const llmRoutes = require("./routes/llmRoutes");
+// Import modular REST routes
 const companyRoutes = require("./routes/companyRoutes");
+const llmRoutes = require("./routes/llmRoutes");
 const outreachRoutes = require("./routes/outreachRoutes");
 const teamMemberRoutes = require("./routes/teamMemberRoutes");
 const emailRoutes = require("./routes/emailRoutes");
@@ -18,23 +17,33 @@ const gmailRoutes = require("./routes/gmailRoutes");
 
 const app = express();
 
-// Determine static frontend path: prefer compiled frontend/dist, fallback to frontend/ or backend/public
+// Determine static frontend path: prioritize compiled production React build
 const frontendDist = path.join(__dirname, "../../frontend/dist");
-const frontendCandidate = path.join(__dirname, "../../frontend");
+const backendPublic = path.join(__dirname, "../public");
+const frontendSrc = path.join(__dirname, "../../frontend");
+
 const publicPath = fs.existsSync(path.join(frontendDist, "index.html"))
   ? frontendDist
-  : fs.existsSync(path.join(frontendCandidate, "index.html"))
-    ? frontendCandidate
-    : path.join(__dirname, "../public");
+  : fs.existsSync(path.join(backendPublic, "index.html"))
+    ? backendPublic
+    : frontendSrc;
 
 // Global Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Serve static assets from primary and fallback public folders
 app.use(express.static(publicPath));
+if (publicPath !== backendPublic && fs.existsSync(backendPublic)) {
+  app.use(express.static(backendPublic));
+}
 
 // Root route: serves frontend single-page application
 app.get("/", (req, res) => {
-  res.sendFile(path.join(publicPath, "index.html"));
+  const targetHtml = fs.existsSync(path.join(publicPath, "index.html"))
+    ? path.join(publicPath, "index.html")
+    : path.join(backendPublic, "index.html");
+  res.sendFile(targetHtml);
 });
 
 // Health check endpoint
@@ -63,13 +72,12 @@ app.use(notFoundHandler(publicPath));
 // Centralized JSON Error Handler
 app.use(errorHandler);
 
-// Server Startup
-if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
-  const HOST = process.env.HOST || "0.0.0.0";
+const PORT = process.env.PORT || 5000;
 
-  app.listen(PORT, HOST, () => {
-    console.log(`Server running on http://${HOST}:${PORT}`);
+if (process.env.NODE_ENV !== "test") {
+  app.listen(PORT, () => {
+    console.log(`[SponcyBot] Server running on port ${PORT}`);
+    console.log(`[SponcyBot] Serving frontend from: ${publicPath}`);
   });
 }
 
