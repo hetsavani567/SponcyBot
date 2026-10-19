@@ -1,4 +1,5 @@
 const fs = require("fs");
+const path = require("path");
 
 /**
  * Ensures any undefined API or data route returns JSON 404 rather than Express HTML.

@@ -38,6 +38,58 @@ const primaryPublicDir = availablePublicDirs[0] || path.join(process.cwd(), "bac
 app.use(cors());
 app.use(express.json());
 
+// Dedicated asset delivery middleware: directly resolves and streams any /assets/* file with guaranteed MIME types
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (!req.path.startsWith("/assets/")) return next();
+
+  const assetSubpath = req.path.replace(/^\/assets\//, "");
+  const cleanSubpath = path.normalize(assetSubpath).replace(/^(\.\.[\/\\])+/, "");
+
+  for (const baseDir of candidateDirs) {
+    const fullPath = path.join(baseDir, "assets", cleanSubpath);
+    if (fs.existsSync(fullPath)) {
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile()) {
+          if (cleanSubpath.endsWith(".js")) {
+            res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+          } else if (cleanSubpath.endsWith(".css")) {
+            res.setHeader("Content-Type", "text/css; charset=utf-8");
+          } else if (cleanSubpath.endsWith(".svg")) {
+            res.setHeader("Content-Type", "image/svg+xml");
+          } else if (cleanSubpath.endsWith(".json")) {
+            res.setHeader("Content-Type", "application/json");
+          }
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          return res.sendFile(fullPath);
+        }
+      } catch (e) {}
+    }
+  }
+
+  // Also check if file exists directly in baseDir
+  for (const baseDir of candidateDirs) {
+    const fullPath = path.join(baseDir, cleanSubpath);
+    if (fs.existsSync(fullPath)) {
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile()) {
+          if (cleanSubpath.endsWith(".js")) {
+            res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+          } else if (cleanSubpath.endsWith(".css")) {
+            res.setHeader("Content-Type", "text/css; charset=utf-8");
+          }
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          return res.sendFile(fullPath);
+        }
+      } catch (e) {}
+    }
+  }
+
+  next();
+});
+
 // Explicit static routes for /assets to guarantee JS/CSS bundles always serve correctly
 availablePublicDirs.forEach(dir => {
   const assetsDir = path.join(dir, "assets");
@@ -60,15 +112,21 @@ if (!availablePublicDirs.includes(backendPublic) && fs.existsSync(backendPublic)
   app.use(express.static(backendPublic, { maxAge: "1d", index: false }));
 }
 
-// Helper to resolve SPA index.html
+// Helper to resolve SPA index.html across all cloud/local environments
 const getIndexPath = () => {
-  const targetHtml = path.join(primaryPublicDir, "index.html");
-  if (fs.existsSync(targetHtml)) {
-    return targetHtml;
+  for (const dir of candidateDirs) {
+    const targetHtml = path.join(dir, "index.html");
+    if (fs.existsSync(targetHtml)) {
+      return targetHtml;
+    }
   }
   const fallbackHtml = path.join(process.cwd(), "backend/public/index.html");
   if (fs.existsSync(fallbackHtml)) {
     return fallbackHtml;
+  }
+  const dirnameFallback = path.join(__dirname, "../public/index.html");
+  if (fs.existsSync(dirnameFallback)) {
+    return dirnameFallback;
   }
   return null;
 };
@@ -138,7 +196,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`[SponcyBot] Server running on port ${PORT}`);
     console.log(`[SponcyBot] Serving frontend from: ${primaryPublicDir}`);

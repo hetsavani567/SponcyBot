@@ -7,12 +7,18 @@
       "config": {
         "includeFiles": [
           "backend/public/**",
-          "frontend/dist/**"
+          "frontend/dist/**",
+          "../public/**",
+          "../../frontend/dist/**"
         ]
       }
     }
   ],
   "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "backend/src/server.js"
+    },
     {
       "src": "/(.*)",
       "dest": "backend/src/server.js"
