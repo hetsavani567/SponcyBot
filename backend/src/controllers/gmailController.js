@@ -1,4 +1,5 @@
 const {
+  getEffectiveRedirectUri,
   getAuthUrl,
   exchangeCodeForTokens,
   getAuthStatus
@@ -10,9 +11,8 @@ const {
  */
 const startOAuth = (req, res) => {
   try {
-    const url = getAuthUrl();
-    // In production this would redirect; we return the URL too
-    // so it can be opened from Postman / curl during development.
+    const redirectUri = getEffectiveRedirectUri(req);
+    const url = getAuthUrl(redirectUri);
     res.redirect(url);
   } catch (error) {
     console.error("[GmailController] startOAuth error:", error);
@@ -36,10 +36,17 @@ const oAuthCallback = async (req, res) => {
 
     // User denied access on the consent screen
     if (oauthError) {
-      return res.status(400).json({
-        success: false,
-        message: `OAuth consent denied: ${oauthError}`
-      });
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>OAuth Denied</title></head>
+        <body style="background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;padding:3rem;text-align:center;">
+          <h2 style="color:#ef4444;">Authorization Cancelled</h2>
+          <p>${oauthError}</p>
+          <a href="/" style="display:inline-block;margin-top:1rem;color:#38bdf8;">Return to Dashboard</a>
+        </body>
+        </html>
+      `);
     }
 
     if (!code) {
@@ -49,21 +56,53 @@ const oAuthCallback = async (req, res) => {
       });
     }
 
-    const { email, tokens } = await exchangeCodeForTokens(code);
-
-    return res.status(200).json({
-      success: true,
-      message: `Gmail successfully authorized for ${email}`,
-      data: {
-        email,
-        scope: tokens.scope,
-        // Never expose raw tokens in the response — just confirm they were stored
-        tokensStored: true,
-        expiryDate: tokens.expiry_date
-          ? new Date(tokens.expiry_date).toISOString()
-          : null
+    const redirectUri = getEffectiveRedirectUri(req);
+    let result;
+    try {
+      result = await exchangeCodeForTokens(code, redirectUri);
+    } catch (tokenErr) {
+      // Fallback: if exchange fails with detected redirectUri, retry with GMAIL_REDIRECT_URI from env
+      if (process.env.GMAIL_REDIRECT_URI && process.env.GMAIL_REDIRECT_URI !== redirectUri) {
+        result = await exchangeCodeForTokens(code, process.env.GMAIL_REDIRECT_URI);
+      } else {
+        throw tokenErr;
       }
-    });
+    }
+
+    const { email } = result;
+
+    // Browser friendly success page with auto-redirect to dashboard
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Gmail Connected - SponsyBot</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #1e293b; border: 1px solid #334155; border-radius: 1rem; padding: 2.5rem; max-width: 440px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+          .badge { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 9999px; background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 28px; margin-bottom: 1.25rem; }
+          h2 { margin: 0 0 0.5rem 0; font-size: 1.25rem; font-weight: 700; color: #fff; }
+          p { margin: 0 0 1.5rem 0; font-size: 0.875rem; color: #94a3b8; line-height: 1.5; }
+          .email { color: #38bdf8; font-weight: 600; font-family: monospace; }
+          a { display: inline-block; background: #059669; color: #fff; text-decoration: none; padding: 0.625rem 1.25rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600; transition: background 0.15s; }
+          a:hover { background: #10b981; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge">✓</div>
+          <h2>Gmail Connected Successfully!</h2>
+          <p>Authorized as <span class="email">${email}</span>.<br>Tokens have been securely saved to the database.</p>
+          <a href="/">Return to Dashboard</a>
+        </div>
+        <script>
+          setTimeout(function() { window.location.href = '/'; }, 2500);
+        </script>
+      </body>
+      </html>
+    `);
   } catch (error) {
     console.error("[GmailController] oAuthCallback error:", error);
     return res.status(500).json({

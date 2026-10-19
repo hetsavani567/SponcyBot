@@ -2,11 +2,24 @@ const { google } = require("googleapis");
 const GmailToken = require("../models/gmailToken");
 
 // ─── OAuth2 Client ─────────────────────────────────────────────────────────
-const createOAuthClient = () => {
+const getEffectiveRedirectUri = (req, customUri) => {
+  if (customUri) return customUri;
+  // If request comes from a deployed host (not localhost), dynamically use the deployed domain
+  if (req) {
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    if (host && !host.includes("localhost") && !host.includes("127.0.0.1")) {
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+      return `${protocol}://${host}/gmail/oauth/callback`;
+    }
+  }
+  return process.env.GMAIL_REDIRECT_URI || "http://localhost:5000/gmail/oauth/callback";
+};
+
+const createOAuthClient = (customRedirectUri) => {
   return new google.auth.OAuth2(
     process.env.GMAIL_CLIENT_ID,
     process.env.GMAIL_CLIENT_SECRET,
-    process.env.GMAIL_REDIRECT_URI
+    customRedirectUri || process.env.GMAIL_REDIRECT_URI || "http://localhost:5000/gmail/oauth/callback"
   );
 };
 
@@ -18,8 +31,8 @@ const SCOPES = [
 ];
 
 // ─── Generate OAuth Consent URL ─────────────────────────────────────────────
-const getAuthUrl = () => {
-  const oAuth2Client = createOAuthClient();
+const getAuthUrl = (customRedirectUri) => {
+  const oAuth2Client = createOAuthClient(customRedirectUri);
   return oAuth2Client.generateAuthUrl({
     access_type: "offline",   // offline = we get a refresh_token
     prompt: "consent",        // force consent so refresh_token is always returned
@@ -28,8 +41,8 @@ const getAuthUrl = () => {
 };
 
 // ─── Exchange Auth Code for Tokens ──────────────────────────────────────────
-const exchangeCodeForTokens = async (code) => {
-  const oAuth2Client = createOAuthClient();
+const exchangeCodeForTokens = async (code, customRedirectUri) => {
+  const oAuth2Client = createOAuthClient(customRedirectUri);
   const { tokens } = await oAuth2Client.getToken(code);
   oAuth2Client.setCredentials(tokens);
 
@@ -443,6 +456,7 @@ Return ONLY raw JSON with no markdown:
 };
 
 module.exports = {
+  getEffectiveRedirectUri,
   getAuthUrl,
   exchangeCodeForTokens,
   getAuthenticatedClient,
