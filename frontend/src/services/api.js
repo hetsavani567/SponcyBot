@@ -70,16 +70,21 @@ export const api = {
   getSponsors: async () => {
     try {
       const { data } = await safeFetchJson('/companies/rank');
-      return Array.isArray(data) ? data : [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.data)) return data.data;
+      if (Array.isArray(data?.rankings)) return data.rankings;
+      return [];
     } catch {
       const { data } = await safeFetchJson('/companies');
-      return Array.isArray(data) ? data : [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.data)) return data.data;
+      return [];
     }
   },
 
   getCompany: async (id) => {
     const { data } = await safeFetchJson(`/companies/${id}`);
-    return data.company || data;
+    return data?.company || data?.data || data;
   },
 
   addCompany: async (payload) => {
@@ -108,12 +113,29 @@ export const api = {
   // Email Proposals & Approval Queue
   getEmails: async () => {
     const { data } = await safeFetchJson('/emails');
-    return data?.data?.emails || (Array.isArray(data) ? data : []);
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.data?.emails)) return data.data.emails;
+    if (Array.isArray(data?.emails)) return data.emails;
+    if (Array.isArray(data)) return data;
+    return [];
+  },
+
+  getEmail: async (emailId) => {
+    try {
+      const { data } = await safeFetchJson(`/emails/${emailId}`);
+      return data?.data?.email || data?.data || data;
+    } catch {
+      return null;
+    }
   },
 
   getApprovalHistory: async (emailId) => {
     const { data } = await safeFetchJson(`/emails/${emailId}/approval-history`);
-    return data?.data || [];
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.data?.history)) return data.data.history;
+    if (Array.isArray(data?.history)) return data.history;
+    if (Array.isArray(data)) return data;
+    return [];
   },
 
   generateDraft: async (companyId) => {
@@ -128,8 +150,15 @@ export const api = {
   approveEmail: async (emailId, reviewerName = 'Partnerships Director') => {
     const { res, data } = await safeFetchJson(`/emails/${emailId}/approve`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewerName, notes: 'Verified tier, ask, and value proposition.' })
+      headers: {
+        'Content-Type': 'application/json',
+        'x-enforce-repetition-guard': 'true'
+      },
+      body: JSON.stringify({
+        reviewerName,
+        notes: 'Verified tier, ask, and unique personalization.',
+        requireRegenerated: true
+      })
     });
     return { res, data };
   },
@@ -143,6 +172,27 @@ export const api = {
     return { res, data };
   },
 
+  deleteEmail: async (emailId) => {
+    const { res, data } = await safeFetchJson(`/emails/${emailId}`, {
+      method: 'DELETE'
+    });
+    return { res, data };
+  },
+
+  deleteRejectedEmails: async () => {
+    const { res, data } = await safeFetchJson('/emails/rejected', {
+      method: 'DELETE'
+    });
+    return { res, data };
+  },
+
+  deleteAllDrafts: async () => {
+    const { res, data } = await safeFetchJson('/emails/all-drafts', {
+      method: 'DELETE'
+    });
+    return { res, data };
+  },
+
   saveEmailEdit: async (payload) => {
     const { res, data } = await safeFetchJson('/emails/edit', {
       method: 'POST',
@@ -152,11 +202,17 @@ export const api = {
     return { res, data };
   },
 
-  regenerateDraft: async (emailId, customInstructions) => {
+  regenerateDraft: async (emailId, options = {}) => {
+    let payload;
+    if (typeof options === 'string') {
+      payload = { emailId, customInstructions: options, preserveSubject: true };
+    } else {
+      payload = { emailId, preserveSubject: true, ...options };
+    }
     const { res, data } = await safeFetchJson('/emails/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailId, customInstructions })
+      body: JSON.stringify(payload)
     });
     return { res, data };
   },
@@ -174,7 +230,16 @@ export const api = {
   getOutreach: async (mode = 'all') => {
     const url = mode === 'due' ? '/outreach/pending-followups' : '/outreach';
     const { data } = await safeFetchJson(url);
-    return mode === 'due' ? (data.pendingFollowUps || []) : (Array.isArray(data) ? data : []);
+    if (mode === 'due') {
+      if (Array.isArray(data?.pendingFollowUps)) return data.pendingFollowUps;
+      if (Array.isArray(data?.data)) return data.data;
+      if (Array.isArray(data)) return data;
+      return [];
+    }
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.outreach)) return data.outreach;
+    return [];
   },
 
   assignOutreach: async (payload) => {
@@ -215,13 +280,16 @@ export const api = {
 
   getOutreachTimeline: async (outreachId) => {
     const { data } = await safeFetchJson(`/outreach/${outreachId}`);
-    return data.timeline || [];
+    return data?.timeline || data?.data?.timeline || (Array.isArray(data) ? data : []);
   },
 
   // Team Members
   getTeamMembers: async () => {
     const { data } = await safeFetchJson('/team-members');
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.teamMembers)) return data.teamMembers;
+    return [];
   },
 
   addTeamMember: async (payload) => {

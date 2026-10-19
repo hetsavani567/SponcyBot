@@ -243,6 +243,8 @@ export default function App() {
           <ApprovalTab
             onShowToast={showToast}
             onRefreshStats={fetchStats}
+            onSwitchTab={(tab) => setCurrentTab(tab)}
+            companies={companies}
           />
         )}
 
