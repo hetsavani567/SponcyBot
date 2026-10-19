@@ -6,11 +6,24 @@
   "scripts": {
     "start": "node backend/src/server.js",
     "dev": "cd backend && npm run dev",
-    "postinstall": "cd backend && npm install",
-    "build": "cd backend && npm install",
-    "test": "cd backend && npm test"
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "cd frontend && npm run build",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "seed:outreach": "cd backend && npm run seed:outreach",
+    "db:clear": "cd backend && npm run db:clear",
+    "test": "cd backend && node src/scripts/testOutreachLogic.js"
   },
-  "keywords": ["sponsorship", "hackathon", "email-outreach", "gemini-ai"],
+  "keywords": [
+    "sponsorship",
+    "hackathon",
+    "email-outreach",
+    "gemini-ai",
+    "crm",
+    "react",
+    "vite"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
