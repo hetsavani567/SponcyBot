@@ -214,6 +214,38 @@ export default function DetailsTab({
             )}
           </div>
 
+          {/* Discovered Contacts Card (Automatic Contact Discovery) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                <span>🎯 Discovered Contacts</span>
+              </h3>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
+                Auto-Discovery Active
+              </span>
+            </div>
+
+            {company?.discoveredContacts && company.discoveredContacts.length > 0 ? (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                {company.discoveredContacts.map((c, idx) => (
+                  <div key={idx} className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-semibold text-white text-[11px]">{c.role}</p>
+                      <a href={`mailto:${c.email}`} className="text-blue-400 hover:underline font-mono text-[10px]">{c.email}</a>
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                      {c.confidence}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Primary: <span className="font-mono text-slate-300">{company?.contactEmail || 'sponsorships@' + (company?.website ? company.website.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : 'company.com')}</span>
+              </p>
+            )}
+          </div>
+
           {/* 6-Factor Score Breakdown Card */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
             <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">

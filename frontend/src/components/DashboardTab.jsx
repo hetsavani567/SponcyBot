@@ -107,17 +107,24 @@ export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmai
           <p className="text-[11px] text-slate-500">Strictly capped at max 2</p>
         </div>
 
-        {/* Metric 6 */}
+        {/* Metric 6: Meetings, Response Rate & Pipeline Value */}
         <div
           onClick={() => onSwitchTab('outreach')}
           className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-2 hover:border-slate-700 transition cursor-pointer"
         >
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Meetings & Conversions</span>
+            <span>Meetings & Funds Secured</span>
             <span className="text-lg">🤝</span>
           </div>
-          <div className="text-2xl font-bold font-mono text-teal-400">{meetingsCount}</div>
-          <p className="text-[11px] text-slate-500">Interested sponsors in conversation</p>
+          <div className="text-2xl font-bold font-mono text-teal-400 flex items-baseline space-x-2">
+            <span>{meetingsCount}</span>
+            <span className="text-sm font-normal text-slate-300">
+              (₹{(stats?.outreach?.fundsSecuredINR || 0).toLocaleString('en-IN')})
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Response Rate: <strong className="text-emerald-400">{stats?.outreach?.responseRatePercent ?? 0}%</strong> · Converted: <strong className="text-teal-300">{stats?.outreach?.conversionRatePercent ?? 0}%</strong>
+          </p>
         </div>
       </div>
 
