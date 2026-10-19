@@ -17,10 +17,16 @@
   "routes": [
     {
       "src": "/assets/(.*)",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      },
       "dest": "backend/src/server.js"
     },
     {
       "src": "/(.*)",
+      "headers": {
+        "cache-control": "no-cache, no-store, must-revalidate"
+      },
       "dest": "backend/src/server.js"
     }
   ]

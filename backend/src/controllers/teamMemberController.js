@@ -1,7 +1,12 @@
+const mongoose = require("mongoose");
 const TeamMember = require("../models/teamMember");
 
 const createTeamMember = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ message: "Database is connecting, please retry in a moment" });
+    }
+
     const { name, email, role } = req.body || {};
 
     if (!name || !String(name).trim()) {
@@ -36,11 +41,15 @@ const createTeamMember = async (req, res) => {
 
 const getTeamMembers = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json([]);
+    }
+
     const members = await TeamMember.find({ active: true }).sort({ name: 1 });
     res.json(members);
   } catch (error) {
     console.error("Get team members error:", error);
-    res.status(500).json({ message: "Failed to get team members", error: error.message });
+    res.status(200).json([]);
   }
 };
 
