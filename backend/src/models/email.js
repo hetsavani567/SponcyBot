@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const EMAIL_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT"];
+const EMAIL_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "REJECTED"];
 const EMAIL_TYPES = ["initial", "followup1", "followup2"];
 const ASK_TYPES = ["money", "goodies", "infra"];
 
