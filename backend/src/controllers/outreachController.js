@@ -87,11 +87,23 @@ const createOutreach = async (req, res) => {
 
 const getAllOutreach = async (req, res) => {
   try {
+    const { status, memberId, companyId } = req.query;
+    const { defaultOutreaches } = require("../services/seedDataService");
+
+    const filterFn = (items) => {
+      return items.filter(item => {
+        if (status && item.status !== status) return false;
+        if (memberId && String(item.memberId?._id || item.memberId?.id || item.memberId) !== String(memberId)) return false;
+        if (companyId && String(item.companyId?._id || item.companyId?.id || item.companyId) !== String(companyId)) return false;
+        return true;
+      });
+    };
+
     if (mongoose.connection.readyState !== 1) {
-      return res.json([]);
+      res.setHeader("Cache-Control", "private, no-cache");
+      return res.json(filterFn(defaultOutreaches));
     }
 
-    const { status, memberId, companyId } = req.query;
     const cacheKey = `outreach_list_${status || "all"}_${memberId || "all"}_${companyId || "all"}`;
 
     const outreaches = await serverCache.getOrSet(cacheKey, async () => {
@@ -109,30 +121,50 @@ const getAllOutreach = async (req, res) => {
         filter.companyId = companyId;
       }
 
-      return await Outreach.find(filter)
+      const results = await Outreach.find(filter)
         .populate("companyId", "name website industry category score recommendedTier recommendedAsk contactName contactEmail")
         .populate("memberId", "name email role")
         .sort({ updatedAt: -1 })
         .lean();
+
+      if (results && results.length > 0) {
+        return results;
+      }
+      return filterFn(defaultOutreaches);
     }, 15, "outreach");
 
     res.setHeader("Cache-Control", "private, no-cache");
     res.json(outreaches);
   } catch (error) {
     console.error("Get all outreach error:", error);
-    res.json([]);
+    try {
+      const { defaultOutreaches } = require("../services/seedDataService");
+      res.json(defaultOutreaches);
+    } catch (_) {
+      res.json([]);
+    }
   }
 };
 
 const getPendingFollowUps = async (req, res) => {
   try {
+    const { defaultOutreaches } = require("../services/seedDataService");
+    const getDefaultPending = () => {
+      const now = new Date();
+      return defaultOutreaches.filter(item => {
+        return item.nextFollowUpAt && new Date(item.nextFollowUpAt) <= now && (item.followUpCount || 0) < 2;
+      });
+    };
+
     if (mongoose.connection.readyState !== 1) {
-      return res.json({ count: 0, pendingFollowUps: [] });
+      const def = getDefaultPending();
+      res.setHeader("Cache-Control", "private, no-cache");
+      return res.json({ count: def.length, pendingFollowUps: def });
     }
 
     const pending = await serverCache.getOrSet("outreach_pending_followups", async () => {
       const now = new Date();
-      return await Outreach.find({
+      const results = await Outreach.find({
         nextFollowUpAt: { $lte: now },
         followUpCount: { $lt: 2 },
         status: { $nin: ["CLOSED", "DECLINED", "INTERESTED", "MEETING"] }
@@ -141,6 +173,11 @@ const getPendingFollowUps = async (req, res) => {
         .populate("memberId", "name email role")
         .sort({ nextFollowUpAt: 1 })
         .lean();
+
+      if (results && results.length > 0) {
+        return results;
+      }
+      return getDefaultPending();
     }, 10, "outreach");
 
     res.setHeader("Cache-Control", "private, no-cache");
@@ -150,10 +187,17 @@ const getPendingFollowUps = async (req, res) => {
     });
   } catch (error) {
     console.error("Get pending follow-ups error:", error);
-    res.json({
-      count: 0,
-      pendingFollowUps: []
-    });
+    try {
+      const { defaultOutreaches } = require("../services/seedDataService");
+      const now = new Date();
+      const def = defaultOutreaches.filter(item => item.nextFollowUpAt && new Date(item.nextFollowUpAt) <= now && (item.followUpCount || 0) < 2);
+      res.json({ count: def.length, pendingFollowUps: def });
+    } catch (_) {
+      res.json({
+        count: 0,
+        pendingFollowUps: []
+      });
+    }
   }
 };
 
@@ -391,10 +435,18 @@ const handleGmailWebhook = async (req, res) => {
  */
 const exportOutreachCSV = async (req, res) => {
   try {
-    const list = await Outreach.find()
-      .populate("companyId")
-      .populate("memberId")
-      .sort({ createdAt: -1 });
+    let list = [];
+    if (mongoose.connection.readyState === 1) {
+      list = await Outreach.find()
+        .populate("companyId")
+        .populate("memberId")
+        .sort({ createdAt: -1 });
+    }
+
+    if (!list || list.length === 0) {
+      const { defaultOutreaches } = require("../services/seedDataService");
+      list = defaultOutreaches;
+    }
 
     const escapeCSV = (val) => {
       if (val === null || val === undefined) return '""';

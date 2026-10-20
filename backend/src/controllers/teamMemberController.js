@@ -41,15 +41,25 @@ const createTeamMember = async (req, res) => {
 
 const getTeamMembers = async (req, res) => {
   try {
+    const { defaultTeamMembers } = require("../services/seedDataService");
+
     if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json([]);
+      return res.json(defaultTeamMembers);
     }
 
     const members = await TeamMember.find({ active: true }).sort({ name: 1 });
+    if (!members || members.length === 0) {
+      return res.json(defaultTeamMembers);
+    }
     res.json(members);
   } catch (error) {
     console.error("Get team members error:", error);
-    res.status(200).json([]);
+    try {
+      const { defaultTeamMembers } = require("../services/seedDataService");
+      res.json(defaultTeamMembers);
+    } catch (_) {
+      res.status(200).json([]);
+    }
   }
 };
 
