@@ -16,6 +16,7 @@ import GmailModal from './components/modals/GmailModal.jsx';
 import OutreachTimelineModal from './components/modals/OutreachTimelineModal.jsx';
 import SimulateReplyModal from './components/modals/SimulateReplyModal.jsx';
 import DemoSimulationModal from './components/modals/DemoSimulationModal.jsx';
+import AuthModal from './components/modals/AuthModal.jsx';
 
 import { api } from './services/api.js';
 
@@ -49,6 +50,8 @@ export default function App() {
   const [simulateTarget, setSimulateTarget] = useState({ outreachId: '', threadId: '', companyName: '' });
 
   const [demoSimulationOpen, setDemoSimulationOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [user, setUser] = useState(() => api.getCurrentUser());
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, visible: true });
@@ -98,7 +101,24 @@ export default function App() {
     fetchStats();
     fetchGmailStatus();
     fetchSponsors();
+
+    // Check organizer session on load
+    const verifySession = async () => {
+      try {
+        const profile = await api.getMe();
+        if (profile) setUser(profile);
+      } catch {
+        // Unauthenticated session
+      }
+    };
+    verifySession();
   }, [fetchStats, fetchGmailStatus, fetchSponsors]);
+
+  const handleSignOut = () => {
+    api.signout();
+    setUser(null);
+    showToast('Signed out successfully.', 'info');
+  };
 
   // Sponsor Actions
   const handleResearchCompany = async (companyId) => {
@@ -193,6 +213,9 @@ export default function App() {
         onSwitchTab={setCurrentTab}
         pendingApprovalsCount={pendingApprovalsCount}
         gmailStatus={gmailStatus}
+        user={user}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onSignOut={handleSignOut}
         onOpenGmailModal={() => setGmailModalOpen(true)}
         onOpenDemoModal={() => setDemoSimulationOpen(true)}
       />
@@ -350,6 +373,15 @@ export default function App() {
         onSuccess={() => {
           fetchStats();
           fetchSponsors();
+        }}
+        onShowToast={showToast}
+      />
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthSuccess={(authenticatedUser) => {
+          setUser(authenticatedUser);
         }}
         onShowToast={showToast}
       />

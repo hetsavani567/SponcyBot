@@ -5,12 +5,14 @@ export default function Navbar({
   onSwitchTab,
   pendingApprovalsCount = 0,
   gmailStatus = {},
+  user = null,
+  onOpenAuthModal,
+  onSignOut,
   onOpenGmailModal,
   onOpenDemoModal
 }) {
   const isGmailConnected = gmailStatus?.authorized;
-  const isDemo = gmailStatus?.isDemo;
-  const email = gmailStatus?.email || 'sponsorships@hackathon.club';
+  const email = gmailStatus?.email || (user?.email || 'sponsorships@hackathon.club');
 
   const tabs = [
     { id: 'dashboard', label: '📊 Dashboard' },
@@ -68,35 +70,59 @@ export default function Navbar({
         </nav>
 
         {/* Right Controls */}
-        <div className="flex items-center space-x-3">
-          {/* Gmail Status Pill */}
+        <div className="flex items-center space-x-2.5">
+          {/* Mailbox Status Pill */}
           <div
             onClick={onOpenGmailModal}
-            className="flex items-center space-x-2 text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 cursor-pointer hover:border-emerald-500/50 transition shadow-sm"
-            title="Click to manage Gmail Connection"
+            className="hidden lg:flex items-center space-x-2 text-xs px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 cursor-pointer hover:border-emerald-500/50 transition shadow-sm"
+            title="Click to configure outbound email sender"
           >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isGmailConnected
-                  ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50'
-                  : 'bg-amber-400 animate-pulse'
-              }`}
-            />
-            <span className="truncate max-w-[170px]">
-              {isGmailConnected
-                ? isDemo
-                  ? `Connected: ${email} (Demo)`
-                  : `Connected: ${email}`
-                : 'Gmail Offline (Connect)'}
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+            <span className="truncate max-w-[140px] font-mono text-[11px]">
+              ✉️ {email}
             </span>
           </div>
+
+          {/* User Authentication Pill / Sign In Button */}
+          {user ? (
+            <div className="flex items-center space-x-2 bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-center text-xs font-bold">
+                {(user.name || user.username || 'U')[0].toUpperCase()}
+              </div>
+              <div className="text-left hidden sm:block leading-tight">
+                <div className="text-xs font-semibold text-white truncate max-w-[120px]">
+                  {user.name || user.username}
+                </div>
+                <div className="text-[10px] text-emerald-400 truncate max-w-[120px]">
+                  {user.role || 'Organizer'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onSignOut}
+                title="Sign out of SponcyBot"
+                className="ml-1 text-[11px] text-slate-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-red-500/10 transition border border-transparent hover:border-red-500/20"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuthModal}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 text-xs font-semibold transition shadow-sm"
+            >
+              <span>🔐</span>
+              <span>Sign In / Sign Up</span>
+            </button>
+          )}
 
           {/* 12-Step Demo Button */}
           <button
             onClick={onOpenDemoModal}
             className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs shadow-md shadow-emerald-500/10 flex items-center space-x-1.5 transition"
           >
-            <span>⚡ Run 12-Step Demo</span>
+            <span>⚡ Run Demo</span>
           </button>
         </div>
       </div>

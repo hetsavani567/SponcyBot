@@ -5,9 +5,17 @@ export async function safeFetchJson(url, options = {}) {
   const baseUrl = window.API_BASE_URL || localStorage.getItem('SPONCY_API_BASE_URL') || '';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
 
+  // Automatically attach auth token if logged in
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('SPONCY_AUTH_TOKEN') : null;
+  const mergedHeaders = {
+    ...(options.headers || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+  const finalOptions = { ...options, headers: mergedHeaders };
+
   let res;
   try {
-    res = await fetch(fullUrl, options);
+    res = await fetch(fullUrl, finalOptions);
   } catch (networkErr) {
     throw new Error(`Cannot reach backend server at ${fullUrl}: ${networkErr.message}. Ensure backend is running.`);
   }
@@ -38,8 +46,71 @@ export async function safeFetchJson(url, options = {}) {
   return { res, data };
 }
 
-// ─── Dashboard & Gmail API ─────────────────────────────────────────────────
+// ─── Dashboard, Auth & Outreach API ─────────────────────────────────────────
 export const api = {
+  // Organizer Username & Password Authentication
+  signup: async (payload) => {
+    const { res, data } = await safeFetchJson('/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok && data?.data?.token) {
+      localStorage.setItem('SPONCY_AUTH_TOKEN', data.data.token);
+      localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(data.data.user));
+    }
+    return { res, data };
+  },
+
+  signin: async (usernameOrEmail, password) => {
+    const { res, data } = await safeFetchJson('/auth/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail, password })
+    });
+    if (res.ok && data?.data?.token) {
+      localStorage.setItem('SPONCY_AUTH_TOKEN', data.data.token);
+      localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(data.data.user));
+    }
+    return { res, data };
+  },
+
+  getMe: async () => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('SPONCY_AUTH_TOKEN') : null;
+    if (!token) return null;
+    try {
+      const { data } = await safeFetchJson('/auth/me');
+      if (data?.data?.user) {
+        localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(data.data.user));
+        return data.data.user;
+      }
+      return null;
+    } catch {
+      localStorage.removeItem('SPONCY_AUTH_TOKEN');
+      localStorage.removeItem('SPONCY_AUTH_USER');
+      return null;
+    }
+  },
+
+  signout: async () => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('SPONCY_AUTH_TOKEN');
+      localStorage.removeItem('SPONCY_AUTH_USER');
+    }
+    try {
+      await safeFetchJson('/auth/signout', { method: 'POST' });
+    } catch {}
+    return { success: true };
+  },
+
+  getCurrentUser: () => {
+    try {
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('SPONCY_AUTH_USER') : null;
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  },
   // System Stats
   getStats: async () => {
     const { data } = await safeFetchJson('/gmail/stats');

@@ -105,18 +105,28 @@ const exchangeCodeForTokens = async (code, customRedirectUri) => {
   const { data } = await oauth2.userinfo.get();
   const email = data.email;
 
+  const tokenData = {
+    email,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+    scope: tokens.scope || SCOPES.join(" ")
+  };
+
+  inMemoryDemoToken = tokenData;
+
   // Persist tokens in DB (upsert by email)
-  await GmailToken.findOneAndUpdate(
-    { email },
-    {
-      email,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-      scope: tokens.scope || SCOPES.join(" ")
-    },
-    { upsert: true, new: true }
-  );
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await GmailToken.findOneAndUpdate(
+        { email },
+        tokenData,
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.warn("[GmailService] Token DB persist warning:", err.message);
+    }
+  }
 
   return { email, tokens };
 };
