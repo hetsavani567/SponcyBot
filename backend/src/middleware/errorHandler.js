@@ -15,6 +15,7 @@ const notFoundHandler = (publicPath) => (req, res, next) => {
     req.path.endsWith(".svg");
 
   const isApiRequest =
+    req.path.startsWith("/auth") ||
     req.path.startsWith("/companies") ||
     req.path.startsWith("/gmail") ||
     req.path.startsWith("/outreach") ||

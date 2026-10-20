@@ -1,4 +1,6 @@
 const {
+  getClientId,
+  getClientSecret,
   getEffectiveRedirectUri,
   getAuthUrl,
   exchangeCodeForTokens,
@@ -17,7 +19,7 @@ const startOAuth = async (req, res) => {
   try {
     const redirectUri = getEffectiveRedirectUri(req);
 
-    if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+    if (!getClientId() || !getClientSecret()) {
       const email = process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
       await connectDemoAccount({ email });
       return res.redirect(`/?gmail_connected=demo&account=${encodeURIComponent(email)}`);
@@ -122,8 +124,12 @@ const oAuthCallback = async (req, res) => {
     try {
       result = await exchangeCodeForTokens(code, redirectUri);
     } catch (tokenErr) {
-      // Fallback: if exchange fails with detected redirectUri, retry with GMAIL_REDIRECT_URI from env
-      if (process.env.GMAIL_REDIRECT_URI && process.env.GMAIL_REDIRECT_URI !== redirectUri) {
+      // Fallback: if exchange fails with detected redirectUri and not an invalid_client error, retry with GMAIL_REDIRECT_URI from env
+      if (
+        process.env.GMAIL_REDIRECT_URI &&
+        process.env.GMAIL_REDIRECT_URI !== redirectUri &&
+        !tokenErr.message.includes("invalid_client")
+      ) {
         result = await exchangeCodeForTokens(code, process.env.GMAIL_REDIRECT_URI);
       } else {
         throw tokenErr;
@@ -166,6 +172,61 @@ const oAuthCallback = async (req, res) => {
     `);
   } catch (error) {
     console.error("[GmailController] oAuthCallback error:", error);
+
+    if (req.accepts("html")) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>OAuth Configuration Notice - SponcyBot</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .card { background: #1e293b; border: 1px solid #475569; border-radius: 1rem; padding: 2rem; max-width: 560px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+            .badge { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 9999px; background: rgba(239, 68, 68, 0.2); color: #f87171; font-size: 24px; margin-bottom: 1rem; }
+            h2 { margin: 0 0 0.5rem 0; font-size: 1.25rem; font-weight: 700; color: #fff; }
+            p { margin: 0 0 1rem 0; font-size: 0.875rem; color: #cbd5e1; line-height: 1.5; }
+            .box { background: #0f172a; border-left: 4px solid #ef4444; padding: 0.75rem 1rem; border-radius: 0.375rem; font-family: monospace; font-size: 0.8125rem; color: #fca5a5; margin-bottom: 1.25rem; word-break: break-word; }
+            .steps { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; font-size: 0.8125rem; color: #94a3b8; line-height: 1.6; }
+            .steps ol { margin: 0; padding-left: 1.25rem; }
+            .steps li { margin-bottom: 0.5rem; }
+            .steps code { color: #38bdf8; background: #1e293b; padding: 2px 4px; border-radius: 3px; }
+            .buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+            a.btn { display: inline-block; background: #059669; color: #fff; text-decoration: none; padding: 0.625rem 1.25rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600; text-align: center; }
+            a.btn:hover { background: #10b981; }
+            a.btn-secondary { background: #334155; }
+            a.btn-secondary:hover { background: #475569; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="badge">✕</div>
+            <h2>Google OAuth Configuration Notice</h2>
+            <p>Google rejected the token exchange with <strong><code>invalid_client</code></strong>.</p>
+            <div class="box">
+              ${error.message}
+            </div>
+            <div class="steps">
+              <strong>How to fix on your deployment platform (Render / Vercel):</strong>
+              <ol>
+                <li>Open <strong>Google Cloud Console</strong> &gt; <em>APIs &amp; Services</em> &gt; <em>Credentials</em>.</li>
+                <li>Under <strong>OAuth 2.0 Client IDs</strong>, click your <strong>Web application</strong> client.</li>
+                <li>Copy the <strong>Client secret</strong>.</li>
+                <li>In your deployment environment variables, verify that <code>GMAIL_CLIENT_SECRET</code> matches it exactly, without surrounding quotes <code>"</code> or trailing spaces.</li>
+                <li>Confirm that <code>GMAIL_CLIENT_ID</code> belongs to this exact same client.</li>
+              </ol>
+            </div>
+            <div class="buttons">
+              <a href="/gmail/oauth/start" class="btn">Retry OAuth</a>
+              <a href="/" class="btn btn-secondary">Return to Dashboard</a>
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
     return res.status(500).json({
       success: false,
       message: "OAuth token exchange failed",

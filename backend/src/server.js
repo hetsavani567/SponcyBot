@@ -8,6 +8,7 @@ const connectDB = require("./config/db");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 // Import modular REST routes
+const authRoutes = require("./routes/authRoutes");
 const companyRoutes = require("./routes/companyRoutes");
 const llmRoutes = require("./routes/llmRoutes");
 const outreachRoutes = require("./routes/outreachRoutes");
@@ -92,6 +93,7 @@ app.get("/health", (req, res) => {
 });
 
 // API Routes
+app.use("/auth", authRoutes);
 app.use("/companies", companyRoutes);
 app.use("/llm", llmRoutes);
 app.use("/outreach", outreachRoutes);
@@ -109,6 +111,7 @@ app.use((req, res, next) => {
   }
 
   const isApi =
+    req.path.startsWith("/auth") ||
     req.path.startsWith("/companies") ||
     req.path.startsWith("/gmail") ||
     req.path.startsWith("/outreach") ||

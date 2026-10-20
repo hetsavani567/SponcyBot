@@ -2,6 +2,18 @@ const { google } = require("googleapis");
 const mongoose = require("mongoose");
 const GmailToken = require("../models/gmailToken");
 
+const cleanEnv = (val) => {
+  if (!val) return "";
+  let s = String(val).trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+};
+
+const getClientId = () => cleanEnv(process.env.GMAIL_CLIENT_ID);
+const getClientSecret = () => cleanEnv(process.env.GMAIL_CLIENT_SECRET);
+
 // ─── OAuth2 Client ─────────────────────────────────────────────────────────
 const getEffectiveRedirectUri = (req, customUri) => {
   if (customUri) return customUri;
@@ -13,14 +25,18 @@ const getEffectiveRedirectUri = (req, customUri) => {
       return `${protocol}://${host}/gmail/oauth/callback`;
     }
   }
-  return process.env.GMAIL_REDIRECT_URI || "http://localhost:5000/gmail/oauth/callback";
+  return cleanEnv(process.env.GMAIL_REDIRECT_URI) || "http://localhost:5000/gmail/oauth/callback";
 };
 
 const createOAuthClient = (customRedirectUri) => {
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
+  const redirectUri = customRedirectUri || cleanEnv(process.env.GMAIL_REDIRECT_URI) || "http://localhost:5000/gmail/oauth/callback";
+
   return new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    customRedirectUri || process.env.GMAIL_REDIRECT_URI || "http://localhost:5000/gmail/oauth/callback"
+    clientId,
+    clientSecret,
+    redirectUri
   );
 };
 
@@ -33,7 +49,9 @@ const SCOPES = [
 
 // ─── Generate OAuth Consent URL ─────────────────────────────────────────────
 const getAuthUrl = (customRedirectUri) => {
-  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
+  if (!clientId || !clientSecret) {
     return null;
   }
   const oAuth2Client = createOAuthClient(customRedirectUri);
@@ -68,29 +86,57 @@ const disconnectAccount = async () => {
 
 // ─── Exchange Auth Code for Tokens ──────────────────────────────────────────
 const exchangeCodeForTokens = async (code, customRedirectUri) => {
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
+
+  if (!clientId || !clientSecret) {
+    const missing = !clientId && !clientSecret ? "GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET" : !clientId ? "GMAIL_CLIENT_ID" : "GMAIL_CLIENT_SECRET";
+    throw new Error(`Missing required OAuth credential: ${missing}. Please set in deployment environment variables.`);
+  }
+
   const oAuth2Client = createOAuthClient(customRedirectUri);
-  const { tokens } = await oAuth2Client.getToken(code);
-  oAuth2Client.setCredentials(tokens);
 
-  // Get the authenticated Gmail account email
-  const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
-  const { data } = await oauth2.userinfo.get();
-  const email = data.email;
+  try {
+    const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
 
-  // Persist tokens in DB (upsert by email)
-  await GmailToken.findOneAndUpdate(
-    { email },
-    {
-      email,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-      scope: tokens.scope || SCOPES.join(" ")
-    },
-    { upsert: true, new: true }
-  );
+    // Get the authenticated Gmail account email
+    const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
+    const { data } = await oauth2.userinfo.get();
+    const email = data.email;
 
-  return { email, tokens };
+    // Persist tokens in DB (upsert by email)
+    await GmailToken.findOneAndUpdate(
+      { email },
+      {
+        email,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        scope: tokens.scope || SCOPES.join(" ")
+      },
+      { upsert: true, new: true }
+    );
+
+    return { email, tokens };
+  } catch (err) {
+    const googleErr = err.response?.data?.error || err.message;
+    const googleDesc = err.response?.data?.error_description || "";
+    console.error(`[GmailService] Exchange token failed: ${googleErr} (${googleDesc})`);
+    console.error(`[GmailService] Debug: Client ID length=${clientId.length}, prefix="${clientId.slice(0, 10)}..."`);
+    console.error(`[GmailService] Debug: Client Secret length=${clientSecret.length}, prefix="${clientSecret.slice(0, 6)}..."`);
+    console.error(`[GmailService] Debug: Redirect URI="${customRedirectUri}"`);
+
+    if (googleErr === "invalid_client" || err.message.includes("invalid_client")) {
+      const detailedError = new Error(
+        `Google rejected the Client Secret (invalid_client). In Render/Deployment Environment variables, verify that GMAIL_CLIENT_SECRET matches the exact Client Secret from Google Cloud Console for Client ID "${clientId.slice(0, 14)}...", without quotes or trailing spaces.`
+      );
+      detailedError.originalError = googleErr;
+      detailedError.googleDescription = googleDesc;
+      throw detailedError;
+    }
+    throw err;
+  }
 };
 
 // ─── Load a Fresh Authenticated OAuth Client from DB ────────────────────────
@@ -99,7 +145,7 @@ const getAuthenticatedClient = async () => {
 
   // If no token exists and no Google OAuth credentials are set, auto-connect demo
   if (!tokenDoc) {
-    if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+    if (!getClientId() || !getClientSecret()) {
       tokenDoc = await connectDemoAccount();
     } else {
       const error = new Error(
@@ -111,7 +157,7 @@ const getAuthenticatedClient = async () => {
   }
 
   const isDemo = Boolean(tokenDoc.accessToken && tokenDoc.accessToken.startsWith("demo_"));
-  if (isDemo || !process.env.GMAIL_CLIENT_ID) {
+  if (isDemo || !getClientId()) {
     return { oAuth2Client: null, senderEmail: tokenDoc.email, isDemo: true };
   }
 
@@ -142,7 +188,7 @@ const getAuthenticatedClient = async () => {
 
 // ─── Check Auth Status ───────────────────────────────────────────────────────
 const getAuthStatus = async () => {
-  const hasGoogleCredentials = Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET);
+  const hasGoogleCredentials = Boolean(getClientId() && getClientSecret());
   if (mongoose.connection.readyState !== 1) {
     return {
       authorized: false,
@@ -525,6 +571,9 @@ Return ONLY raw JSON with no markdown:
 };
 
 module.exports = {
+  cleanEnv,
+  getClientId,
+  getClientSecret,
   getEffectiveRedirectUri,
   getAuthUrl,
   connectDemoAccount,
