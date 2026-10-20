@@ -74,7 +74,7 @@ Return the complete JSON object.
   console.log("Starting Gemini...");
   console.time("Gemini");
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
   console.log(`Using model: ${model}`);
 
   try {

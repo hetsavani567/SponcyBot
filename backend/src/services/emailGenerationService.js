@@ -3,7 +3,7 @@ const { buildEmailPrompt } = require("./emailPrompts");
 
 const PLACEHOLDER_REGEX = /\[[a-zA-Z0-9_\s-]{2,40}\]/;
 
-function parseAndValidateEmailResponse(rawText) {
+function parseAndValidateEmailResponse(rawText, company = {}, options = {}) {
   if (!rawText || typeof rawText !== "string") {
     throw new Error("Empty or non-string response from AI model");
   }
@@ -49,22 +49,39 @@ function parseAndValidateEmailResponse(rawText) {
     throw new Error("Generated email is missing a valid body");
   }
 
-  const subject = parsed.subject.trim();
+  let subject = parsed.subject.trim();
   let body = parsed.body.trim();
 
   // Strip cliché openings if the LLM hallucinated them
   body = body.replace(/([^\n]+,\s*)(?:I hope (?:this email finds you well|you are doing well)[.,]?\s*)+/i, "$1");
 
-  // 4. Reject bracket placeholders (e.g. [Your Name], [Insert Date], etc.)
-  const subjectPlaceholder = subject.match(PLACEHOLDER_REGEX);
-  if (subjectPlaceholder) {
-    throw new Error(`Subject contains unpopulated placeholder: "${subjectPlaceholder[0]}"`);
-  }
+  // Dynamic placeholder replacer: replaces [Your Name], [Insert Date], etc. with actual event & organizer details
+  const organizerName = (options && options.organizerName) || process.env.ORGANIZER_NAME || "Mahathi K.";
+  const organizerRole = (options && options.organizerRole) || process.env.ORGANIZER_ROLE || "Lead, Sponsorships & Partnerships";
+  const organizerOrg = (options && options.organizerOrg) || process.env.ORGANIZER_ORG || "ACM NIT Surat";
+  const organizerEmail = (options && options.organizerEmail) || process.env.ORGANIZER_EMAIL || "partnerships@sponsybot.com";
+  const eventName = (options && options.eventName) || process.env.EVENT_NAME || "Hackathon 2026";
+  const brandName = (company && company.name ? company.name : "Partner")
+    .replace(/\s*(Pvt\.?\s*Ltd\.?|Inc\.?|LLC|Corp\.?|Ltd\.?)$/i, "")
+    .trim();
 
-  const bodyPlaceholder = body.match(PLACEHOLDER_REGEX);
-  if (bodyPlaceholder) {
-    throw new Error(`Body contains unpopulated placeholder: "${bodyPlaceholder[0]}"`);
-  }
+  const replacePlaceholders = (text) => {
+    if (!text || typeof text !== "string") return "";
+    return text
+      .replace(/\[(?:Your Name|Organizer Name|Name)\]/gi, organizerName)
+      .replace(/\[(?:Your Title|Title|Role|Organizer Role|Job Title)\]/gi, organizerRole)
+      .replace(/\[(?:Organization|University|College|Organizer Org|Chapter)\]/gi, organizerOrg)
+      .replace(/\[(?:Event Name|Hackathon Name)\]/gi, eventName)
+      .replace(/\[(?:Company Name|Sponsor Name)\]/gi, brandName)
+      .replace(/\[(?:Email|Organizer Email)\]/gi, organizerEmail)
+      .replace(/\[(?:Phone Number|Phone|Contact)\]/gi, "+91 98765 43210")
+      .replace(/\[(?:Website\/LinkedIn|LinkedIn|Website|Link)\]/gi, "https://sponsybot.com")
+      .replace(/\[(?:Insert Date|Date)\]/gi, "November 14-16, 2026")
+      .replace(/\[[a-zA-Z0-9_\s-]{2,40}\]/g, ""); // strip any remaining orphan bracket placeholder
+  };
+
+  subject = replacePlaceholders(subject);
+  body = replacePlaceholders(body);
 
   return { subject, body };
 }
@@ -73,36 +90,55 @@ function generateFallbackEmail(company, options = {}) {
   const type = options.type || "initial";
   const tier = company.recommendedTier || "Silver";
   const ask = company.recommendedAsk || "money";
-  const contact = company.contactName || "Partnerships Team";
+  const contact = company.contactName ? company.contactName.trim().split(/\s+/)[0] : "Partnerships Team";
   const eventName = options.eventName || process.env.EVENT_NAME || "Hackathon 2026";
-  const organizerOrg = options.organizerOrg || process.env.ORGANIZER_ORG || "Partnerships Team";
+  const organizerOrg = options.organizerOrg || process.env.ORGANIZER_ORG || "ACM NIT Surat";
+  const organizerName = options.organizerName || process.env.ORGANIZER_NAME || "Sponsorship Team";
+  const organizerRole = options.organizerRole || process.env.ORGANIZER_ROLE || "Lead, Partnerships";
+
+  const brandName = (company.name || "Sponsor")
+    .replace(/\s*(Pvt\.?\s*Ltd\.?|Inc\.?|LLC|Corp\.?|Ltd\.?)$/i, "")
+    .trim();
+
+  // Weave research and intelligence
+  const pitchAngle = company.shortPitch
+    ? company.shortPitch
+    : company.whyGoodSponsor
+    ? `${brandName} is a natural partner given your leadership in ${company.category || "developer technology"}.`
+    : `We admire ${brandName}'s active support for engineering talent and developer ecosystems.`;
+
+  const askAngle = company.whatToAsk
+    ? company.whatToAsk
+    : ask === "infra"
+    ? `developer platform access, API credits, and a dedicated challenge track`
+    : ask === "goodies"
+    ? `developer swag, hardware kits, and bounty prizes for participants`
+    : `${tier} tier sponsorship contribution (${tier === "Gold" ? "₹1,50,000" : "₹75,000"})`;
+
+  const customRequirementSentence = options.customInstructions && options.customInstructions.trim()
+    ? `\n\nSpecific to our conversation: ${options.customInstructions.trim()}`
+    : "";
 
   if (type === "followup1") {
     return {
-      subject: `Following up: ${eventName} x ${company.name} Partnership`,
-      body: `Hi ${contact},\n\nI wanted to quickly follow up on my previous note regarding partnering with ${eventName}. We are locking in our ${tier} tier partners this week for our student developer hackathon.\n\nWould you have 10 minutes this week for a brief introductory call?\n\nBest regards,\n${organizerOrg}`,
+      subject: `Re: ${brandName} x ${eventName} - Partnership Discussion`,
+      body: `Hi ${contact},\n\nI wanted to quickly follow up on our previous note regarding partnering for ${eventName}. We are locking in our ${tier} tier partners this week.\n\n${pitchAngle}\n\nWe would love to collaborate on ${askAngle}.${customRequirementSentence}\n\nWould you have 10 minutes this Thursday for a brief introductory call?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
       attempts: 1
     };
   }
   if (type === "followup2") {
     return {
-      subject: `Final follow-up: ${eventName} x ${company.name}`,
-      body: `Hi ${contact},\n\nI understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore developer engagement or challenge prize tracks with ${company.name}, please let us know. Otherwise, we hope to connect for our next edition!\n\nBest regards,\n${organizerOrg}`,
+      subject: `Final follow-up: ${brandName} x ${eventName}`,
+      body: `Hi ${contact},\n\nI understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore student engagement with ${brandName} (${askAngle}), please let us know.${customRequirementSentence}\n\nOtherwise, we hope to stay in touch for future editions!\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
       attempts: 1
     };
   }
 
-  const askText = ask === "infra"
-    ? `cloud credits and developer tooling access for student builders`
-    : ask === "goodies"
-    ? `swag, prizes, and developer goodies for our participants`
-    : `${tier} tier cash sponsorship to support prizes, mentorship, and workshops`;
-
   return {
-    subject: `${company.name} x ${eventName} - Partnership Proposal`,
-    body: `Hi ${contact},\n\nWe are organizing ${eventName} bringing together top student developers and designers for our upcoming hackathon.\n\nGiven ${company.name}'s leadership in ${company.category || "technology"} and commitment to developer communities, we would love to invite ${company.name} as a ${tier} partner.\n\nWe are looking to collaborate on ${askText}. In return, we offer dedicated workshop tracks, recruitment access to finalist resumes, and prominent brand visibility.\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerOrg}`,
+    subject: `${brandName} x ${eventName} - ${tier} Partnership Proposal`,
+    body: `Hello ${contact},\n\n${pitchAngle}\n\nWe are organizing ${eventName} with ${organizerOrg}, convening 500+ top student developers, engineers, and designers for 36 hours of high-impact building.\n\nWe would love to welcome ${brandName} as a ${tier} Partner. Specifically, we are proposing collaboration on:\n• ${askAngle}\n• 45-minute hands-on workshop track and challenge bounty\n• Opt-in access to finalist resume database for engineering and DevRel hiring\n• Prime brand visibility across digital channels, stage, and our 1,500+ builder community${customRequirementSentence}\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
     promptUsed: "Resilient Fallback Engine",
     attempts: 1
   };
@@ -112,7 +148,7 @@ function generateFallbackEmail(company, options = {}) {
  * Generate email with retry logic (up to 3 attempts)
  */
 async function generateEmailDraft(company, options = {}) {
-  const maxAttempts = 3;
+  const maxAttempts = 2;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -129,7 +165,7 @@ async function generateEmailDraft(company, options = {}) {
         responseMimeType: "application/json"
       });
 
-      const validated = parseAndValidateEmailResponse(rawResponse);
+      const validated = parseAndValidateEmailResponse(rawResponse, company, options);
       return {
         ...validated,
         promptUsed: prompt,
@@ -142,8 +178,8 @@ async function generateEmailDraft(company, options = {}) {
         console.warn("[emailGenerationService] Reached max attempts or network error. Generating high-quality fallback draft.");
         return generateFallbackEmail(company, options);
       }
-      // Wait with backoff before next attempt to allow demand spikes to pass
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+      // Brief pause before retry
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
 

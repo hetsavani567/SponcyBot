@@ -16,17 +16,22 @@ const {
 const { EmailVersion } = require("../models/emailVersion");
 const { ApprovalLog } = require("../models/approvalLog");
 
-/**
- * Helper to fetch company from DB
- */
 async function resolveCompany(companyId) {
   if (!companyId) return null;
 
-  if (mongoose.Types.ObjectId.isValid(companyId)) {
-    return Company.findById(companyId);
+  if (mongoose.connection.readyState === 1) {
+    try {
+      if (mongoose.Types.ObjectId.isValid(companyId)) {
+        const found = await Company.findById(companyId);
+        if (found) return found;
+      }
+      const foundByName = await Company.findOne({ name: String(companyId).trim() });
+      if (foundByName) return foundByName;
+    } catch {}
   }
 
-  return Company.findOne({ name: String(companyId).trim() });
+  const { getCompanyById } = require("./companyController");
+  return getCompanyById(companyId);
 }
 
 /**
