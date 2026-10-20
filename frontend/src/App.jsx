@@ -163,7 +163,11 @@ export default function App() {
           setNewlyCreatedEmail(createdEmail);
           setPreselectedEmailId(createdEmail._id);
         }
-        showToast(`AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
+        if (data?.usedFallback) {
+          showToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+        } else {
+          showToast(`AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
+        }
         fetchStats();
       } else {
         showToast(data?.message || 'Draft generation failed', 'error');

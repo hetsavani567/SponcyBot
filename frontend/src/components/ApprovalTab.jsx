@@ -82,7 +82,11 @@ export default function ApprovalTab({
     try {
       const { res, data } = await api.generateDraft(targetId);
       if (res.ok) {
-        onShowToast('Draft created successfully! Review and approve below.', 'success');
+        if (data?.usedFallback) {
+          onShowToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+        } else {
+          onShowToast('Draft created successfully! Review and approve below.', 'success');
+        }
         const createdEmail = data?.data?.email || data?.email;
         if (createdEmail) {
           if (!createdEmail.companyId || typeof createdEmail.companyId === 'string') {
@@ -314,7 +318,11 @@ export default function ApprovalTab({
         preserveSubject: preserveSubject
       });
       if (res.ok) {
-        onShowToast('✨ New unique AI email generated! Repetition check passed & approval unlocked.', 'success');
+        if (data?.usedFallback) {
+          onShowToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+        } else {
+          onShowToast('✨ New unique AI email generated! Repetition check passed & approval unlocked.', 'success');
+        }
         const updatedEmail = data?.data?.email || data?.email;
         if (updatedEmail) {
           if (updatedEmail.body) {

@@ -57,6 +57,7 @@ function buildEmailPrompt(company, options = {}) {
     customInstructions = "",
     previousSubject = "",
     previousBody = "",
+    requestedSubject = "",
     isRegeneration = false,
 
     organizerName =
@@ -259,6 +260,14 @@ Do not repeat its opening, main pitch, or entire sentences.
 `;
   }
 
+  const subjectTopic = (requestedSubject || "").trim().slice(0, 150);
+  if (subjectTopic) {
+    revisionNotes += `
+REQUIRED SUBJECT LINE (set by the reviewer): "${subjectTopic}"
+The email body MUST be written around this subject: its opening hook, framing and call to action should clearly reflect what this subject promises. Different subjects must produce visibly different emails, not one generic pitch. Return this exact subject text in the "subject" JSON field.
+`;
+  }
+
   if (customInstructions.trim()) {
     revisionNotes += `
 REVIEWER INSTRUCTIONS:
@@ -401,7 +410,7 @@ ${signOff}
 Return ONLY valid JSON. No Markdown fences, explanations, or extra keys.
 Use this exact structure:
 {
-  "subject": "A clear, mobile-friendly subject under 40 characters",
+  "subject": "${subjectTopic ? subjectTopic.replace(/"/g, '\'') : "A clear, mobile-friendly subject under 40 characters"}",
   "body": "The complete email body with escaped newline characters"
 }
 

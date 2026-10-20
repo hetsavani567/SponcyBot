@@ -119,33 +119,40 @@ function generateFallbackEmail(company, options = {}) {
     ? `\n\nSpecific to our conversation: ${options.customInstructions.trim()}`
     : "";
 
+  const requested = (options.requestedSubject || "").trim();
+  const subjectOr = (dflt) => requested || dflt;
+  const topicLine = requested ? `Regarding "${requested}": ` : "";
+
   if (type === "followup1") {
     return {
-      subject: `Re: ${brandName} x ${eventName} - Partnership Discussion`,
-      body: `Hi ${contact},\n\nI wanted to quickly follow up on our previous note regarding partnering for ${eventName}. We are locking in our ${tier} tier partners this week.\n\n${pitchAngle}\n\nWe would love to collaborate on ${askAngle}.${customRequirementSentence}\n\nWould you have 10 minutes this Thursday for a brief introductory call?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+      subject: subjectOr(`Re: ${brandName} x ${eventName} - Partnership Discussion`),
+      body: `Hi ${contact},\n\n${topicLine}I wanted to quickly follow up on our previous note regarding partnering for ${eventName}. We are locking in our ${tier} tier partners this week.\n\n${pitchAngle}\n\nWe would love to collaborate on ${askAngle}.${customRequirementSentence}\n\nWould you have 10 minutes this Thursday for a brief introductory call?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
+      usedFallback: true,
       attempts: 1
     };
   }
   if (type === "followup2") {
     return {
-      subject: `Final follow-up: ${brandName} x ${eventName}`,
-      body: `Hi ${contact},\n\nI understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore student engagement with ${brandName} (${askAngle}), please let us know.${customRequirementSentence}\n\nOtherwise, we hope to stay in touch for future editions!\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+      subject: subjectOr(`Final follow-up: ${brandName} x ${eventName}`),
+      body: `Hi ${contact},\n\n${topicLine}I understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore student engagement with ${brandName} (${askAngle}), please let us know.${customRequirementSentence}\n\nOtherwise, we hope to stay in touch for future editions!\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
+      usedFallback: true,
       attempts: 1
     };
   }
 
   return {
-    subject: `${brandName} x ${eventName} - ${tier} Partnership Proposal`,
-    body: `Hello ${contact},\n\n${pitchAngle}\n\nWe are organizing ${eventName} with ${organizerOrg}, convening 500+ top student developers, engineers, and designers for 36 hours of high-impact building.\n\nWe would love to welcome ${brandName} as a ${tier} Partner. Specifically, we are proposing collaboration on:\n• ${askAngle}\n• 45-minute hands-on workshop track and challenge bounty\n• Opt-in access to finalist resume database for engineering and DevRel hiring\n• Prime brand visibility across digital channels, stage, and our 1,500+ builder community${customRequirementSentence}\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+    subject: subjectOr(`${brandName} x ${eventName} - ${tier} Partnership Proposal`),
+    body: `Hello ${contact},\n\n${topicLine}${pitchAngle}\n\nWe are organizing ${eventName} with ${organizerOrg}, convening 500+ top student developers, engineers, and designers for 36 hours of high-impact building.\n\nWe would love to welcome ${brandName} as a ${tier} Partner. Specifically, we are proposing collaboration on:\n• ${askAngle}\n• 45-minute hands-on workshop track and challenge bounty\n• Opt-in access to finalist resume database for engineering and DevRel hiring\n• Prime brand visibility across digital channels, stage, and our 1,500+ builder community${customRequirementSentence}\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
     promptUsed: "Resilient Fallback Engine",
+    usedFallback: true,
     attempts: 1
   };
 }
 
 /**
- * Generate email with retry logic (up to 3 attempts)
+ * Generate email with retry logic (up to 2 attempts)
  */
 async function generateEmailDraft(company, options = {}) {
   const maxAttempts = 2;
@@ -167,6 +174,9 @@ async function generateEmailDraft(company, options = {}) {
       });
 
       const validated = parseAndValidateEmailResponse(rawResponse, company, options);
+      if (options.requestedSubject && options.requestedSubject.trim()) {
+        validated.subject = options.requestedSubject.trim();
+      }
       return {
         ...validated,
         promptUsed: prompt,

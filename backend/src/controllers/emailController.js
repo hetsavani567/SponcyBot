@@ -46,6 +46,7 @@ const generateEmail = async (req, res) => {
       customInstructions,
       previousSubject,
       previousBody,
+      subject: requestedSubject,
       eventDetails = {},
       options: extraOptions = {}
     } = req.body;
@@ -87,6 +88,7 @@ const generateEmail = async (req, res) => {
       customInstructions,
       previousSubject: prevSubj,
       previousBody: prevBdy,
+      requestedSubject: typeof requestedSubject === "string" ? requestedSubject : "",
       ...eventDetails,
       ...extraOptions
     });
@@ -117,7 +119,10 @@ const generateEmail = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Email generated successfully",
+      message: draft.usedFallback
+        ? "Email generated with fallback template (AI unavailable)"
+        : "Email generated successfully",
+      usedFallback: !!draft.usedFallback,
       data: {
         email: responseEmail,
         version: emailVersion
@@ -176,7 +181,10 @@ const regenerateEmail = async (req, res) => {
     // If a customSubject was explicitly passed in req.body, prioritize that.
     // Otherwise, if preserveSubject is true, keep email.subject.
     const hasCustomSubjectInput = typeof customSubject === "string" && customSubject.trim().length > 0;
-    const subjectCandidate = hasCustomSubjectInput
+    // The frontend always sends the current subject, so only treat it as a
+    // deliberate choice if we are preserving it or the reviewer actually edited it.
+    const subjectEdited = hasCustomSubjectInput && customSubject.trim() !== (email.subject || "").trim();
+    const subjectCandidate = hasCustomSubjectInput && (preserveSubject || subjectEdited)
       ? customSubject.trim()
       : (preserveSubject && email.subject)
         ? email.subject.trim()
@@ -187,6 +195,7 @@ const regenerateEmail = async (req, res) => {
       customInstructions,
       previousSubject: subjectCandidate || email.subject,
       previousBody: email.body,
+      requestedSubject: subjectCandidate || "",
       isRegeneration: true
     });
 
@@ -203,7 +212,10 @@ const regenerateEmail = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Email regenerated successfully",
+      message: draft.usedFallback
+        ? "Email regenerated with fallback template (AI unavailable)"
+        : "Email regenerated successfully",
+      usedFallback: !!draft.usedFallback,
       data: {
         email: updatedEmail,
         version: emailVersion
