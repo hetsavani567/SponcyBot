@@ -9,30 +9,30 @@ export default function SimulateReplyModal({
   onShowToast
 }) {
   const [replyText, setReplyText] = useState('');
+  const [selectedOutcome, setSelectedOutcome] = useState('INTERESTED');
   const [analyzing, setAnalyzing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [classification, setClassification] = useState(null);
 
-  const setPreset = (type) => {
-    if (type === 'INTERESTED') {
-      setReplyText(
-        `Hi Team,\n\nThanks for reaching out! We are definitely interested in supporting the ACM Hackathon. Could you send over the Gold tier deliverables deck? Let's connect on a 15-minute call this Thursday.`
-      );
-    } else if (type === 'DECLINED') {
-      setReplyText(
-        `Hello,\n\nThank you for thinking of us. Unfortunately our university sponsorship budget for this quarter is fully committed, so we will have to pass this year.`
-      );
-    } else {
-      setReplyText(
-        `Hi,\n\nI am currently out of office on business travel until next Tuesday. Please follow up with me next week.`
-      );
-    }
+  const presets = {
+    INTERESTED: `Hi Team,\n\nThanks for reaching out! We are definitely interested in supporting the ACM Hackathon. Could you send over the Gold tier deliverables deck? Let's connect on a 15-minute call this Thursday.`,
+    DECLINED: `Hello,\n\nThank you for thinking of us. Unfortunately our university sponsorship budget for this quarter is fully committed, so we will have to pass this year.`,
+    OTHER: `Hi,\n\nI am currently out of office on business travel until next Tuesday. Please follow up with me next week.`
+  };
+
+  const handleSelectOutcome = (outcome) => {
+    setSelectedOutcome(outcome);
+    setReplyText(presets[outcome] || '');
+    setClassification(null);
   };
 
   useEffect(() => {
     if (isOpen) {
-      setPreset('INTERESTED');
+      setSelectedOutcome('INTERESTED');
+      setReplyText(presets.INTERESTED);
       setClassification(null);
+      setAnalyzing(false);
+      setConfirming(false);
     }
   }, [isOpen]);
 
@@ -55,18 +55,22 @@ export default function SimulateReplyModal({
 
       if (res.ok && data?.data) {
         setClassification(data.data);
+        if (data.data.suggestedLabel && ['INTERESTED', 'DECLINED', 'OTHER'].includes(data.data.suggestedLabel)) {
+          setSelectedOutcome(data.data.suggestedLabel);
+        }
+        onShowToast(`AI suggested label: ${data.data.suggestedLabel}`, 'info');
       } else {
-        onShowToast(data.message || 'Classification failed', 'error');
+        onShowToast(data.message || 'Classification failed, using selected outcome', 'warning');
       }
     } catch (err) {
-      onShowToast(err.message, 'error');
+      onShowToast(`AI Analysis: ${err.message}`, 'warning');
     } finally {
       setAnalyzing(false);
     }
   };
 
   const handleConfirmOutcome = async () => {
-    const label = classification?.suggestedLabel || 'INTERESTED';
+    const label = selectedOutcome || classification?.suggestedLabel || 'INTERESTED';
     setConfirming(true);
     onShowToast(`Confirming reply outcome: ${label}...`, 'info');
     try {
@@ -75,15 +79,15 @@ export default function SimulateReplyModal({
         outreachId: target?.outreachId,
         label,
         confirmedBy: 'Partnerships Director',
-        notes: `Simulated inbound sponsor reply confirmed as ${label}`
+        notes: replyText.trim() || `Sponsor inbound reply recorded as ${label}`
       });
 
       if (res.ok) {
-        onShowToast(`Outcome confirmed! Outreach status updated to ${label}.`, 'success');
+        onShowToast(`Outcome confirmed! Outreach for ${target?.companyName || 'Sponsor'} updated to ${label}.`, 'success');
         onClose();
         if (onSuccess) onSuccess();
       } else {
-        onShowToast(data.message || 'Confirmation failed', 'error');
+        onShowToast(data?.message || 'Confirmation failed', 'error');
       }
     } catch (err) {
       onShowToast(err.message, 'error');
@@ -92,21 +96,18 @@ export default function SimulateReplyModal({
     }
   };
 
-  const badgeColor = {
-    INTERESTED: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    DECLINED: 'bg-red-500/20 text-red-300 border-red-500/40',
-    OTHER: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-  }[classification?.suggestedLabel] || 'bg-slate-800 text-slate-300 border-slate-700';
-
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center space-x-2">
-            <span className="text-xl">🤖</span>
+            <span className="text-xl">💬</span>
             <div>
-              <h3 className="text-base font-bold text-white">Simulate Sponsor Reply</h3>
-              <p className="text-xs text-slate-400">Test AI Sentiment Classification & Human Confirmation</p>
+              <h3 className="text-base font-bold text-white">Record Sponsor Reply</h3>
+              <p className="text-xs text-slate-400">
+                Log inbound response for <strong className="text-emerald-300">{target?.companyName || 'Sponsor'}</strong> &amp; update CRM
+              </p>
             </div>
           </div>
           <button
@@ -117,93 +118,113 @@ export default function SimulateReplyModal({
           </button>
         </div>
 
-        <div className="space-y-3 text-xs">
-          {/* Preset Selector */}
+        <div className="space-y-4 text-xs">
+          {/* Outcome Selector */}
           <div>
-            <label className="block text-slate-300 mb-1">Choose Preset Response Template:</label>
+            <label className="block text-slate-300 font-semibold mb-1.5">
+              Select Sponsor Outcome / Status:
+            </label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setPreset('INTERESTED')}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-left font-medium transition"
+                onClick={() => handleSelectOutcome('INTERESTED')}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  selectedOutcome === 'INTERESTED'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500 font-bold shadow-sm'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
+                }`}
               >
-                ✓ Interested (Call)
+                <div className="text-xs">✓ Interested</div>
+                <div className="text-[10px] text-emerald-400/80 font-normal mt-0.5">Ready for Call / Deck</div>
               </button>
+
               <button
                 type="button"
-                onClick={() => setPreset('DECLINED')}
-                className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-left font-medium transition"
+                onClick={() => handleSelectOutcome('DECLINED')}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  selectedOutcome === 'DECLINED'
+                    ? 'bg-red-500/20 text-red-300 border-red-500 font-bold shadow-sm'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
+                }`}
               >
-                ✕ Declined (Budget)
+                <div className="text-xs">✕ Declined</div>
+                <div className="text-[10px] text-red-400/80 font-normal mt-0.5">Budget Full / Pass</div>
               </button>
+
               <button
                 type="button"
-                onClick={() => setPreset('AMBIGUOUS')}
-                className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-left font-medium transition"
+                onClick={() => handleSelectOutcome('OTHER')}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  selectedOutcome === 'OTHER'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500 font-bold shadow-sm'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
+                }`}
               >
-                ⏳ Out of Office
+                <div className="text-xs">⏳ Out of Office</div>
+                <div className="text-[10px] text-amber-400/80 font-normal mt-0.5">Follow up later</div>
               </button>
             </div>
           </div>
 
+          {/* Reply Textarea */}
           <div>
-            <label className="block text-slate-300 mb-1">Sponsor Reply Text:</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-slate-300 font-medium">Inbound Message Content:</label>
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={analyzing}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 underline disabled:opacity-50"
+              >
+                <span>{analyzing ? 'Analyzing...' : '🧠 AI Auto-Detect Intent'}</span>
+              </button>
+            </div>
             <textarea
               rows={4}
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white resize-none font-mono focus:outline-none focus:border-indigo-500/60"
+              placeholder="Paste or edit sponsor's incoming message..."
             />
           </div>
 
-          <button
-            type="button"
-            onClick={handleAnalyze}
-            disabled={analyzing}
-            className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition shadow-sm flex items-center justify-center space-x-1.5 disabled:opacity-50"
-          >
-            <span>{analyzing ? 'Analyzing with AI...' : '🧠 Analyze Intent with AI'}</span>
-          </button>
-
-          {/* AI Output Box */}
+          {/* AI Output Box if analyzed */}
           {classification && (
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-slate-400">Suggested Label:</span>
-                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono border ${badgeColor}`}>
-                    {classification.suggestedLabel}
-                  </span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  Confidence: {classification.confidence || 'HIGH'}
-                </span>
+            <div className="p-2.5 rounded-lg bg-indigo-950/30 border border-indigo-800/40 text-xs flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="text-indigo-300 font-medium">AI Analysis:</span>
+                <span className="font-bold text-white uppercase">{classification.suggestedLabel}</span>
+                <span className="text-[11px] text-slate-400">({classification.reason || 'Detected from message'})</span>
               </div>
-              <p className="text-xs text-slate-300">
-                {classification.reason || 'AI classified intent based on sponsor message.'}
-              </p>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={handleConfirmOutcome}
-                  disabled={confirming}
-                  className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg transition shadow-sm disabled:opacity-50"
-                >
-                  {confirming
-                    ? 'Updating...'
-                    : `Confirm Outcome '${classification.suggestedLabel}' & Update CRM`}
-                </button>
-              </div>
+              <span className="text-[10px] text-indigo-400 font-mono">Confidence: {classification.confidence || 'HIGH'}</span>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end border-t border-slate-800 pt-2">
+        {/* Primary Action Button */}
+        <div className="pt-2 border-t border-slate-800 flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={handleConfirmOutcome}
+            disabled={confirming}
+            className={`flex-1 px-4 py-2.5 font-semibold rounded-xl text-xs text-white transition shadow-md flex items-center justify-center space-x-2 disabled:opacity-50 ${
+              selectedOutcome === 'INTERESTED'
+                ? 'bg-emerald-600 hover:bg-emerald-500'
+                : selectedOutcome === 'DECLINED'
+                ? 'bg-red-600 hover:bg-red-500'
+                : 'bg-amber-600 hover:bg-amber-500'
+            }`}
+          >
+            <span>
+              {confirming
+                ? 'Updating Outreach Status...'
+                : `✓ Confirm Sponsor Reply as '${selectedOutcome}' & Update CRM`}
+            </span>
+          </button>
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition"
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
           >
             Cancel
           </button>

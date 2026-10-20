@@ -32,6 +32,11 @@ export default function App() {
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
+  // Live AI Drafting status for instant Approval Queue rendering
+  const [draftingTarget, setDraftingTarget] = useState(null); // { companyId, companyName }
+  const [newlyCreatedEmail, setNewlyCreatedEmail] = useState(null);
+  const [preselectedEmailId, setPreselectedEmailId] = useState(null);
+
   // Toast
   const [toast, setToast] = useState({ message: '', type: 'info', visible: false });
 
@@ -41,6 +46,7 @@ export default function App() {
   const [assignPreselectedCompanyId, setAssignPreselectedCompanyId] = useState(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [gmailModalOpen, setGmailModalOpen] = useState(false);
+  const [outreachRefreshTrigger, setOutreachRefreshTrigger] = useState(0);
 
   const [timelineModalOpen, setTimelineModalOpen] = useState(false);
   const [timelineOutreachId, setTimelineOutreachId] = useState(null);
@@ -138,18 +144,34 @@ export default function App() {
   };
 
   const handleGenerateDraft = async (companyId) => {
-    showToast('Generating personalized AI email proposal...', 'info');
+    const comp = companies.find(c => (c._id || c.id) === companyId);
+    const compName = comp?.name || comp?.company || 'Sponsor';
+
+    // Instantly transition to Approval queue with zero lag (0ms response)
+    setCurrentTab('approval');
+    setDraftingTarget({ companyId, companyName: compName });
+    showToast(`⚡ Drafting AI proposal for ${compName}... Landing in queue.`, 'info');
+
     try {
       const { res, data } = await api.generateDraft(companyId);
       if (res.ok) {
-        showToast('Email proposal draft created! Send Guard requires human review.', 'success');
-        setCurrentTab('approval');
+        const createdEmail = data?.data?.email || data?.email;
+        if (createdEmail) {
+          if (!createdEmail.companyId || typeof createdEmail.companyId === 'string') {
+            createdEmail.companyId = comp || { _id: companyId, name: compName };
+          }
+          setNewlyCreatedEmail(createdEmail);
+          setPreselectedEmailId(createdEmail._id);
+        }
+        showToast(`AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
         fetchStats();
       } else {
-        showToast(data.message || 'Draft generation failed', 'error');
+        showToast(data?.message || 'Draft generation failed', 'error');
       }
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setDraftingTarget(null);
     }
   };
 
@@ -252,6 +274,7 @@ export default function App() {
           <SponsorsTab
             companies={companies}
             loading={companiesLoading}
+            draftingCompanyId={draftingTarget?.companyId}
             onOpenAddModal={() => setAddSponsorOpen(true)}
             onResearch={handleResearchCompany}
             onGenerateDraft={handleGenerateDraft}
@@ -268,12 +291,17 @@ export default function App() {
             onRefreshStats={fetchStats}
             onSwitchTab={(tab) => setCurrentTab(tab)}
             companies={companies}
+            draftingTarget={draftingTarget}
+            newlyCreatedEmail={newlyCreatedEmail}
+            preselectedEmailId={preselectedEmailId}
+            onDraftHandled={() => setNewlyCreatedEmail(null)}
           />
         )}
 
         {/* Tab 4: Outreach CRM */}
         {currentTab === 'outreach' && (
           <OutreachTab
+            refreshTrigger={outreachRefreshTrigger}
             onOpenAssignModal={(compId) => {
               setAssignPreselectedCompanyId(compId || null);
               setAssignOutreachOpen(true);
@@ -360,6 +388,7 @@ export default function App() {
         onClose={() => setSimulateReplyOpen(false)}
         onSuccess={() => {
           fetchStats();
+          setOutreachRefreshTrigger(prev => prev + 1);
           if (currentTab === 'details' && simulateTarget.threadId) {
             // refresh details
           }

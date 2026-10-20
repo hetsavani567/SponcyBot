@@ -487,7 +487,7 @@ const classifyReplyWithAI = async (replyText, companyContext = "") => {
     try {
       const { GoogleGenAI } = require("@google/genai");
       const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
       const prompt = `
 You are SponcyBot's Reply Classifier for hackathon sponsorship outreach.
@@ -509,14 +509,22 @@ Return ONLY raw JSON with no markdown:
 }
 `.trim();
 
-      const response = await client.models.generateContent({
+      const callPromise = client.models.generateContent({
         model,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          temperature: 0.1
+          temperature: 0.1,
+          maxOutputTokens: 300
         }
       });
+
+      const response = await Promise.race([
+        callPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout with ${model} after 5s`)), 5000)
+        )
+      ]);
 
       const parsed = JSON.parse(response.text.replace(/```json/g, "").replace(/```/g, "").trim());
       if (parsed && ["INTERESTED", "DECLINED", "OTHER"].includes(parsed.suggestedLabel)) {

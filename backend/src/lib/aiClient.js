@@ -5,10 +5,10 @@ const ai = new GoogleGenAI({
 });
 
 const DEFAULT_MODELS = [
-  process.env.GEMINI_MODEL || "gemini-3.5-flash",
-  "gemini-3.5-flash",
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  "gemini-3.5-flash-lite",
   "gemini-flash-lite-latest",
-  "gemini-3.5-flash-lite"
+  "gemini-3.5-flash"
 ].filter(Boolean);
 
 async function generate(prompt, options = {}) {
@@ -22,7 +22,7 @@ async function generate(prompt, options = {}) {
         contents: prompt,
         config: {
           temperature: options.temperature !== undefined ? options.temperature : 0.7,
-          maxOutputTokens: options.maxOutputTokens || 2048,
+          maxOutputTokens: options.maxOutputTokens || 600,
           ...(options.responseMimeType ? { responseMimeType: options.responseMimeType } : {})
         }
       });
@@ -30,7 +30,7 @@ async function generate(prompt, options = {}) {
       const res = await Promise.race([
         generatePromise,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timeout with ${model} after 30s`)), 30000)
+          setTimeout(() => reject(new Error(`Timeout with ${model} after 5s`)), 5000)
         )
       ]);
 
