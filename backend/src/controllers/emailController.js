@@ -101,11 +101,25 @@ const generateEmail = async (req, res) => {
       status: "PENDING_APPROVAL"
     });
 
+    // Populate company details so the frontend immediately displays company info without extra round-trip
+    let responseEmail = email;
+    if (email && typeof email.populate === "function") {
+      try {
+        await email.populate("companyId");
+        responseEmail = email;
+      } catch (_) {}
+    }
+    if (responseEmail && (!responseEmail.companyId || typeof responseEmail.companyId !== "object" || !responseEmail.companyId.name)) {
+      const emailObj = responseEmail.toObject ? responseEmail.toObject() : { ...responseEmail };
+      emailObj.companyId = company;
+      responseEmail = emailObj;
+    }
+
     return res.status(201).json({
       success: true,
       message: "Email generated successfully",
       data: {
-        email,
+        email: responseEmail,
         version: emailVersion
       }
     });

@@ -203,7 +203,10 @@ export default function DetailsTab({
                 <div className="pt-2 border-t border-slate-800/60">
                   <span className="text-[11px] text-slate-400">Recommended Ask:</span>
                   <p className="text-xs text-slate-200 font-medium mt-0.5">
-                    {company.recommendedAsk || 'money'} ({company.whatToAsk || 'Sponsorship'})
+                    <span className="font-semibold text-emerald-300">
+                      {company.recommendedAsk === 'infra' ? '☁️ Cloud Credits' : company.recommendedAsk === 'goodies' ? '🎁 Swag/Prizes' : '💰 Cash'}
+                    </span>
+                    {company.whatToAsk ? ` · ${company.whatToAsk}` : ''}
                   </p>
                 </div>
               </>

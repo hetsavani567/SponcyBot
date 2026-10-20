@@ -77,20 +77,18 @@ const discoverContactsForCompany = (domain, searchResultsText = "", existingCont
   return discovered;
 };
 
-const researchCompany = async (company) => {
+const researchCompany = async (company, options = {}) => {
   const domain = extractDomain(company.website, company.name);
 
-  if (company.research) {
+  // If company already has detailed multi-source web research and not explicitly refreshing, reuse research text
+  const isDefaultSnippet = typeof company.research === "string" && company.research.length < 200 && !company.sources?.length;
+  if (company.research && !isDefaultSnippet && !options.refresh) {
     const discovered = discoverContactsForCompany(domain, company.research, company.contactEmail);
     return {
-      industry: company.industry,
+      industry: company.industry || company.category,
       research: company.research,
       sources: company.sources || [],
-      researchedAt: company.researchedAt,
-      score: company.score,
-      category: company.category,
-      recommendedTier: company.recommendedTier,
-      recommendedAsk: company.recommendedAsk,
+      researchedAt: company.researchedAt || new Date().toISOString(),
       discoveredContacts: discovered,
       contactEmail: company.contactEmail || (discovered[0]?.email || `sponsorships@${domain}`)
     };
@@ -153,26 +151,22 @@ Content: ${(result.content || "").slice(0, 1000)}
     const discoveredContacts = discoverContactsForCompany(domain, researchText, company.contactEmail);
 
     return {
-      industry: "",
+      industry: company.category || "Technology",
       research: researchText,
       sources,
       researchedAt: new Date().toISOString(),
-      score: 0,
-      category: "",
-      recommendedTier: "",
-      recommendedAsk: "",
       discoveredContacts,
       contactEmail: company.contactEmail || (discoveredContacts[0]?.email || `sponsorships@${domain}`)
     };
 
   } catch (error) {
     console.warn("Tavily search failed or rate-limited, generating heuristic research profile:", error.message);
-    const researchText = `Source 1\nTitle: ${company.name} Overview & Developer Ecosystem\nURL: ${company.website || "https://" + domain}\nContent: ${company.name} is a leading provider in ${company.category || "technology"}. Actively invests in developer community programs, hackathons, and student engineering initiatives.\n\nSource 2\nTitle: Student Sponsorship Program\nURL: https://example.org/hackathon-sponsors\nContent: Verified sponsorship track participation for student hackathons and technical symposiums.`;
+    const researchText = `Source 1\nTitle: ${company.name} Overview & Developer Ecosystem\nURL: ${company.website || "https://" + domain}\nContent: ${company.name} is an active brand in ${company.category || "technology"}. Actively supports student engineering initiatives, developer workshops, and campus hackathon programs.\n\nSource 2\nTitle: Campus Sponsorship Track\nURL: https://example.org/hackathon-sponsors\nContent: Verified sponsorship track participation for student hackathons and technical symposiums.`;
     const sources = [
       {
-        title: `${company.name} Developer Ecosystem`,
+        title: `${company.name} Ecosystem Profile`,
         url: company.website || `https://${domain}`,
-        evidence: `Developer tools and technology ecosystem sponsorship profile for ${company.name}`
+        evidence: `Technology and campus community sponsorship profile for ${company.name}`
       }
     ];
 
@@ -183,10 +177,6 @@ Content: ${(result.content || "").slice(0, 1000)}
       research: researchText,
       sources,
       researchedAt: new Date().toISOString(),
-      score: 75,
-      category: company.category || "Technology",
-      recommendedTier: "Gold",
-      recommendedAsk: "money",
       discoveredContacts,
       contactEmail: company.contactEmail || (discoveredContacts[0]?.email || `sponsorships@${domain}`)
     };

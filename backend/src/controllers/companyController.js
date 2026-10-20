@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const Company = require("../models/company");
 const { analyzeCompany } = require("../services/sponsorIntelligence");
 
+const { generateDynamicSponsorProfile } = require("../services/sponsorProfiles");
+
 const getScoreBreakdown = (company) => ({
   eventFit: company.eventFit,
   sponsorshipEvidence: company.sponsorshipEvidence,
@@ -49,11 +51,11 @@ const research = async (req, res) => {
   try {
     const companyId = String(req.body?.companyId || "");
 
-    if (!companyId.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!companyId) {
       return res.status(400).json({ message: "Invalid company ID" });
     }
 
-    const company = await Company.findById(companyId);
+    const company = await getCompanyById(companyId);
 
     if (!company) {
       return res.status(404).json({ message: "Company not found" });
@@ -79,36 +81,38 @@ const research = async (req, res) => {
       "whatToAsk",
       "shortPitch",
       "isVerified",
-      "confidence"
+      "confidence",
+      "score",
+      "recommendedTier"
     ];
 
-    for (const field of fields) {
-      if (result[field] !== undefined) {
-        company.set(field, result[field]);
+    if (company.set && typeof company.save === "function") {
+      for (const field of fields) {
+        if (result[field] !== undefined) {
+          company.set(field, result[field]);
+        }
       }
+      await company.save();
+      inMemoryCompanies.set(String(company._id || company.id), company);
+
+      return res.json({
+        ...company.toObject(),
+        scoreBreakdown: getScoreBreakdown(company)
+      });
+    } else {
+      for (const field of fields) {
+        if (result[field] !== undefined) {
+          company[field] = result[field];
+        }
+      }
+      company.updatedAt = new Date();
+      inMemoryCompanies.set(String(company._id || company.id), company);
+
+      return res.json({
+        ...company,
+        scoreBreakdown: getScoreBreakdown(company)
+      });
     }
-
-    const score =
-      Number(company.eventFit || 0) +
-      Number(company.sponsorshipEvidence || 0) +
-      Number(company.educationCommunityFit || 0) +
-      Number(company.productRelevance || 0) +
-      Number(company.audienceFit || 0) +
-      Number(company.sponsorshipPotential || 0);
-
-    company.score = Math.min(score, 100);
-
-    company.recommendedTier =
-      company.score >= 90 ? "Platinum" :
-      company.score >= 75 ? "Gold" :
-      company.score >= 60 ? "Silver" : "Bronze";
-
-    await company.save();
-
-    res.json({
-      ...company.toObject(),
-      scoreBreakdown: getScoreBreakdown(company)
-    });
   } catch (error) {
     console.error("Company research error:", error);
 
@@ -183,6 +187,96 @@ const seedDefaults = [
     contactRole: "Developer Relations",
     createdAt: new Date(),
     updatedAt: new Date()
+  },
+  {
+    _id: "671000000000000000000003",
+    id: "671000000000000000000003",
+    name: "Stripe",
+    company: "Stripe",
+    website: "https://stripe.com",
+    industry: "Finance",
+    category: "Finance",
+    score: 84,
+    recommendedTier: "Gold",
+    recommendedAsk: "money",
+    eventFit: 21,
+    sponsorshipEvidence: 18,
+    educationCommunityFit: 12,
+    productRelevance: 11,
+    audienceFit: 13,
+    sponsorshipPotential: 9,
+    whyGoodSponsor: "Stripe powers global internet commerce and recruits premier collegiate engineering talent.",
+    research: "Stripe is a financial infrastructure platform for the internet. Actively supports hackathon bounty tracks, financial API developer adoption, and student recruiting.",
+    strategy: "Propose a dedicated Fintech & Payments innovation track with finalist resume book access for engineering hiring.",
+    whatToAsk: "Gold tier cash sponsorship of ₹1,50,000 / $5,000 for track prizes and recruiter booth presence.",
+    shortPitch: "Partner with ACM NIT Surat to engage 500+ top student developers for fintech innovation and talent hiring.",
+    confidence: "HIGH",
+    isVerified: true,
+    contactName: "University Partnerships",
+    contactEmail: "sponsorships@stripe.com",
+    contactRole: "Head of Developer Programs",
+    createdAt: new Date(),
+    updatedAt: new Date()
+  },
+  {
+    _id: "671000000000000000000004",
+    id: "671000000000000000000004",
+    name: "GeeksforGeeks",
+    company: "GeeksforGeeks",
+    website: "https://geeksforgeeks.org",
+    industry: "Education",
+    category: "Education",
+    score: 74,
+    recommendedTier: "Silver",
+    recommendedAsk: "goodies",
+    eventFit: 18,
+    sponsorshipEvidence: 15,
+    educationCommunityFit: 15,
+    productRelevance: 12,
+    audienceFit: 12,
+    sponsorshipPotential: 6,
+    whyGoodSponsor: "GeeksforGeeks is a household name for student computer science education and interview prep.",
+    research: "GeeksforGeeks provides extensive learning portals, practice problems, and courses for engineering students across India. Frequent partner in collegiate tech symposiums.",
+    strategy: "Offer premium course coupon packages, interview prep vouchers, and branding across participant hack portals.",
+    whatToAsk: "Annual GfG course vouchers for top 20 teams and participant swag hampers.",
+    shortPitch: "Empower 500+ student developers with advanced learning access and interview vouchers from GeeksforGeeks.",
+    confidence: "HIGH",
+    isVerified: true,
+    contactName: "Campus Relations Lead",
+    contactEmail: "campus@geeksforgeeks.org",
+    contactRole: "Academic Partnerships",
+    createdAt: new Date(),
+    updatedAt: new Date()
+  },
+  {
+    _id: "671000000000000000000005",
+    id: "671000000000000000000005",
+    name: "Red Bull",
+    company: "Red Bull",
+    website: "https://redbull.com",
+    industry: "Food & Beverage",
+    category: "Food & Beverage",
+    score: 66,
+    recommendedTier: "Bronze",
+    recommendedAsk: "goodies",
+    eventFit: 17,
+    sponsorshipEvidence: 16,
+    educationCommunityFit: 9,
+    productRelevance: 8,
+    audienceFit: 11,
+    sponsorshipPotential: 5,
+    whyGoodSponsor: "Red Bull energizes hackers through 36 continuous hours of intense ideation and development.",
+    research: "Red Bull has a longstanding presence at global collegiate hackathons, gaming tournaments, and collegiate events providing energy drink wings teams and midnight fuel stations.",
+    strategy: "Propose an official 36-hour Energy Partner activation with a branded midnight fuel station and can deliveries.",
+    whatToAsk: "500 cans of Red Bull energy drink for midnight hacker refueling and branded stage signage.",
+    shortPitch: "Fuel 500+ student builders for 36 continuous hours of hacking as the official Energy Partner of ACM NIT Surat.",
+    confidence: "HIGH",
+    isVerified: true,
+    contactName: "Student Brand Manager",
+    contactEmail: "campus@redbull.com",
+    contactRole: "Field Marketing Lead",
+    createdAt: new Date(),
+    updatedAt: new Date()
   }
 ];
 
@@ -255,7 +349,6 @@ const addCompany = async (req, res) => {
       });
     }
 
-    const isTech = /cloud|tech|ai|dev|data|software|platform|tools|api|infra/i.test((category || "") + " " + trimmedName);
     const domain = website
       ? website.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase()
       : `${trimmedName.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`;
@@ -263,34 +356,41 @@ const addCompany = async (req, res) => {
     const generatedId = new mongoose.Types.ObjectId().toString();
     const defaultContactEmail = contactEmail || `sponsorships@${domain}`;
 
+    const dynamicProfile = generateDynamicSponsorProfile({
+      name: trimmedName,
+      website: website || `https://${domain}`,
+      industry,
+      category
+    });
+
     const companyData = {
       _id: generatedId,
       id: generatedId,
       name: trimmedName,
       website: website || `https://${domain}`,
-      industry: industry || category || (isTech ? "Cloud & Developer Tools" : "Technology"),
-      category: category || (isTech ? "Cloud & Developer Tools" : "Technology"),
+      industry: industry || dynamicProfile.industry,
+      category: category || dynamicProfile.category,
       contactName: contactName || "Partnerships Lead",
       contactEmail: defaultContactEmail,
       contactRole: contactRole || "Sponsorships Desk",
       linkedinUrl: linkedinUrl || "",
       sponsorshipHistory: Array.isArray(sponsorshipHistory) ? sponsorshipHistory : [],
-      score: isTech ? 88 : 78,
-      recommendedTier: isTech ? "Gold" : "Silver",
-      recommendedAsk: isTech ? "infra" : "money",
-      eventFit: isTech ? 23 : 19,
-      sponsorshipEvidence: 17,
-      educationCommunityFit: 15,
-      productRelevance: isTech ? 15 : 12,
-      audienceFit: 12,
-      sponsorshipPotential: 8,
-      whyGoodSponsor: `${trimmedName} is an active brand aligned with student builders and developer talent.`,
-      research: `${trimmedName} is a leading brand in ${category || "Technology"}. Actively supports student developers, hackathons, and campus tech programs.`,
-      strategy: `Pitch student engagement, track branding, and prize bounties to ${trimmedName}.`,
-      whatToAsk: isTech ? `Cloud credits, API access, and workshop track branding.` : `Tier sponsorship contribution or prize bounties.`,
-      shortPitch: `Partner with ACM NIT Surat Hackathon to engage 500+ builders with ${trimmedName}.`,
-      confidence: "HIGH",
-      isVerified: true,
+      score: dynamicProfile.score,
+      recommendedTier: dynamicProfile.recommendedTier,
+      recommendedAsk: dynamicProfile.recommendedAsk,
+      eventFit: dynamicProfile.eventFit,
+      sponsorshipEvidence: dynamicProfile.sponsorshipEvidence,
+      educationCommunityFit: dynamicProfile.educationCommunityFit,
+      productRelevance: dynamicProfile.productRelevance,
+      audienceFit: dynamicProfile.audienceFit,
+      sponsorshipPotential: dynamicProfile.sponsorshipPotential,
+      whyGoodSponsor: dynamicProfile.whyGoodSponsor,
+      research: dynamicProfile.research,
+      strategy: dynamicProfile.strategy,
+      whatToAsk: dynamicProfile.whatToAsk,
+      shortPitch: dynamicProfile.shortPitch,
+      confidence: dynamicProfile.confidence,
+      isVerified: dynamicProfile.isVerified,
       sources: [
         {
           title: `${trimmedName} Developer Ecosystem`,

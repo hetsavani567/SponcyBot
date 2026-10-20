@@ -162,7 +162,8 @@ async function generateEmailDraft(company, options = {}) {
 
       const rawResponse = await generate(prompt, {
         temperature: attempt === 1 ? 0.7 : 0.4,
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 500
       });
 
       const validated = parseAndValidateEmailResponse(rawResponse, company, options);

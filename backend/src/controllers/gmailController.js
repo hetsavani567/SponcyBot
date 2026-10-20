@@ -492,25 +492,29 @@ const confirmReplyHandler = async (req, res) => {
 
     // 1. Update GmailThread record
     let threadDoc = null;
-    if (threadId) {
-      threadDoc = await GmailThread.findOneAndUpdate(
-        { threadId },
-        {
-          confirmedLabel: label,
-          confirmedBy,
-          confirmedAt: new Date()
-        },
-        { new: true }
-      );
+    if (threadId && mongoose.connection.readyState === 1) {
+      try {
+        threadDoc = await GmailThread.findOneAndUpdate(
+          { threadId },
+          {
+            confirmedLabel: label,
+            confirmedBy,
+            confirmedAt: new Date()
+          },
+          { new: true, upsert: true }
+        );
+      } catch (_) {}
     }
 
     // 2. Find and update Outreach record
     let outreach = null;
-    if (outreachId) {
-      outreach = await Outreach.findById(outreachId);
-    }
-    if (!outreach && threadId) {
-      outreach = await Outreach.findOne({ threadId });
+    if (mongoose.connection.readyState === 1) {
+      if (outreachId && mongoose.Types.ObjectId.isValid(outreachId)) {
+        outreach = await Outreach.findById(outreachId);
+      }
+      if (!outreach && threadId) {
+        outreach = await Outreach.findOne({ threadId });
+      }
     }
 
     if (outreach) {
@@ -521,6 +525,8 @@ const confirmReplyHandler = async (req, res) => {
         targetStatus = "DECLINED";
       } else if (label === "NO_REPLY") {
         targetStatus = "NO REPLY";
+      } else if (label === "OTHER") {
+        targetStatus = "WAITING FOR REPLY";
       }
 
       await updateOutreachStatus(outreach, targetStatus, {
