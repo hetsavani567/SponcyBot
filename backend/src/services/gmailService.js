@@ -105,18 +105,28 @@ const exchangeCodeForTokens = async (code, customRedirectUri) => {
   const { data } = await oauth2.userinfo.get();
   const email = data.email;
 
+  const tokenData = {
+    email,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+    scope: tokens.scope || SCOPES.join(" ")
+  };
+
+  inMemoryDemoToken = tokenData;
+
   // Persist tokens in DB (upsert by email)
-  await GmailToken.findOneAndUpdate(
-    { email },
-    {
-      email,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-      scope: tokens.scope || SCOPES.join(" ")
-    },
-    { upsert: true, new: true }
-  );
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await GmailToken.findOneAndUpdate(
+        { email },
+        tokenData,
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.warn("[GmailService] Token DB persist warning:", err.message);
+    }
+  }
 
   return { email, tokens };
 };
@@ -477,7 +487,7 @@ const classifyReplyWithAI = async (replyText, companyContext = "") => {
     try {
       const { GoogleGenAI } = require("@google/genai");
       const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
       const prompt = `
 You are SponcyBot's Reply Classifier for hackathon sponsorship outreach.
@@ -499,14 +509,22 @@ Return ONLY raw JSON with no markdown:
 }
 `.trim();
 
-      const response = await client.models.generateContent({
+      const callPromise = client.models.generateContent({
         model,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          temperature: 0.1
+          temperature: 0.1,
+          maxOutputTokens: 300
         }
       });
+
+      const response = await Promise.race([
+        callPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout with ${model} after 5s`)), 5000)
+        )
+      ]);
 
       const parsed = JSON.parse(response.text.replace(/```json/g, "").replace(/```/g, "").trim());
       if (parsed && ["INTERESTED", "DECLINED", "OTHER"].includes(parsed.suggestedLabel)) {

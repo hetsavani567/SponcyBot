@@ -16,6 +16,7 @@ import GmailModal from './components/modals/GmailModal.jsx';
 import OutreachTimelineModal from './components/modals/OutreachTimelineModal.jsx';
 import SimulateReplyModal from './components/modals/SimulateReplyModal.jsx';
 import DemoSimulationModal from './components/modals/DemoSimulationModal.jsx';
+import AuthModal from './components/modals/AuthModal.jsx';
 
 import { api } from './services/api.js';
 
@@ -31,6 +32,11 @@ export default function App() {
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
+  // Live AI Drafting status for instant Approval Queue rendering
+  const [draftingTarget, setDraftingTarget] = useState(null); // { companyId, companyName }
+  const [newlyCreatedEmail, setNewlyCreatedEmail] = useState(null);
+  const [preselectedEmailId, setPreselectedEmailId] = useState(null);
+
   // Toast
   const [toast, setToast] = useState({ message: '', type: 'info', visible: false });
 
@@ -40,6 +46,7 @@ export default function App() {
   const [assignPreselectedCompanyId, setAssignPreselectedCompanyId] = useState(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [gmailModalOpen, setGmailModalOpen] = useState(false);
+  const [outreachRefreshTrigger, setOutreachRefreshTrigger] = useState(0);
 
   const [timelineModalOpen, setTimelineModalOpen] = useState(false);
   const [timelineOutreachId, setTimelineOutreachId] = useState(null);
@@ -49,6 +56,8 @@ export default function App() {
   const [simulateTarget, setSimulateTarget] = useState({ outreachId: '', threadId: '', companyName: '' });
 
   const [demoSimulationOpen, setDemoSimulationOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [user, setUser] = useState(() => api.getCurrentUser());
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, visible: true });
@@ -98,7 +107,24 @@ export default function App() {
     fetchStats();
     fetchGmailStatus();
     fetchSponsors();
+
+    // Check organizer session on load
+    const verifySession = async () => {
+      try {
+        const profile = await api.getMe();
+        if (profile) setUser(profile);
+      } catch {
+        // Unauthenticated session
+      }
+    };
+    verifySession();
   }, [fetchStats, fetchGmailStatus, fetchSponsors]);
+
+  const handleSignOut = () => {
+    api.signout();
+    setUser(null);
+    showToast('Signed out successfully.', 'info');
+  };
 
   // Sponsor Actions
   const handleResearchCompany = async (companyId) => {
@@ -118,22 +144,38 @@ export default function App() {
   };
 
   const handleGenerateDraft = async (companyId) => {
-    showToast('Generating personalized AI email proposal...', 'info');
+    const comp = companies.find(c => (c._id || c.id) === companyId);
+    const compName = comp?.name || comp?.company || 'Sponsor';
+
+    // Instantly transition to Approval queue with zero lag (0ms response)
+    setCurrentTab('approval');
+    setDraftingTarget({ companyId, companyName: compName });
+    showToast(`⚡ Drafting AI proposal for ${compName}... Landing in queue.`, 'info');
+
     try {
       const { res, data } = await api.generateDraft(companyId);
       if (res.ok) {
+        const createdEmail = data?.data?.email || data?.email;
+        if (createdEmail) {
+          if (!createdEmail.companyId || typeof createdEmail.companyId === 'string') {
+            createdEmail.companyId = comp || { _id: companyId, name: compName };
+          }
+          setNewlyCreatedEmail(createdEmail);
+          setPreselectedEmailId(createdEmail._id);
+        }
         if (data?.usedFallback) {
           showToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
         } else {
-          showToast('Email proposal draft created! Send Guard requires human review.', 'success');
+          showToast(`AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
         }
-        setCurrentTab('approval');
         fetchStats();
       } else {
-        showToast(data.message || 'Draft generation failed', 'error');
+        showToast(data?.message || 'Draft generation failed', 'error');
       }
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setDraftingTarget(null);
     }
   };
 
@@ -197,6 +239,9 @@ export default function App() {
         onSwitchTab={setCurrentTab}
         pendingApprovalsCount={pendingApprovalsCount}
         gmailStatus={gmailStatus}
+        user={user}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onSignOut={handleSignOut}
         onOpenGmailModal={() => setGmailModalOpen(true)}
         onOpenDemoModal={() => setDemoSimulationOpen(true)}
       />
@@ -233,6 +278,7 @@ export default function App() {
           <SponsorsTab
             companies={companies}
             loading={companiesLoading}
+            draftingCompanyId={draftingTarget?.companyId}
             onOpenAddModal={() => setAddSponsorOpen(true)}
             onResearch={handleResearchCompany}
             onGenerateDraft={handleGenerateDraft}
@@ -249,12 +295,17 @@ export default function App() {
             onRefreshStats={fetchStats}
             onSwitchTab={(tab) => setCurrentTab(tab)}
             companies={companies}
+            draftingTarget={draftingTarget}
+            newlyCreatedEmail={newlyCreatedEmail}
+            preselectedEmailId={preselectedEmailId}
+            onDraftHandled={() => setNewlyCreatedEmail(null)}
           />
         )}
 
         {/* Tab 4: Outreach CRM */}
         {currentTab === 'outreach' && (
           <OutreachTab
+            refreshTrigger={outreachRefreshTrigger}
             onOpenAssignModal={(compId) => {
               setAssignPreselectedCompanyId(compId || null);
               setAssignOutreachOpen(true);
@@ -341,6 +392,7 @@ export default function App() {
         onClose={() => setSimulateReplyOpen(false)}
         onSuccess={() => {
           fetchStats();
+          setOutreachRefreshTrigger(prev => prev + 1);
           if (currentTab === 'details' && simulateTarget.threadId) {
             // refresh details
           }
@@ -354,6 +406,15 @@ export default function App() {
         onSuccess={() => {
           fetchStats();
           fetchSponsors();
+        }}
+        onShowToast={showToast}
+      />
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthSuccess={(authenticatedUser) => {
+          setUser(authenticatedUser);
         }}
         onShowToast={showToast}
       />

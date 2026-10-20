@@ -14,6 +14,7 @@ const outreachRoutes = require("./routes/outreachRoutes");
 const teamMemberRoutes = require("./routes/teamMemberRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const gmailRoutes = require("./routes/gmailRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 
@@ -158,6 +159,7 @@ app.get("/health", (req, res) => {
 });
 
 // API Routes
+app.use("/auth", authRoutes);
 app.use("/companies", companyRoutes);
 app.use("/llm", llmRoutes);
 app.use("/outreach", outreachRoutes);
@@ -175,6 +177,7 @@ app.use((req, res, next) => {
   }
 
   const isApi =
+    req.path.startsWith("/auth") ||
     req.path.startsWith("/companies") ||
     req.path.startsWith("/gmail") ||
     req.path.startsWith("/outreach") ||

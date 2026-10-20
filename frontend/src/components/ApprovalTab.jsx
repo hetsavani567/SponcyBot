@@ -1,7 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api.js';
 
-export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, companies = [] }) {
+export default function ApprovalTab({
+  onShowToast,
+  onRefreshStats,
+  onSwitchTab,
+  companies = [],
+  draftingTarget = null,
+  newlyCreatedEmail = null,
+  preselectedEmailId = null,
+  onDraftHandled = null
+}) {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState(null);
@@ -12,8 +21,11 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
   const [regenerating, setRegenerating] = useState(false);
   const [acting, setActing] = useState(false);
   const [autoDrafting, setAutoDrafting] = useState(false);
+  const [localDraftingTarget, setLocalDraftingTarget] = useState(null);
   const [preserveSubject, setPreserveSubject] = useState(true);
   const [customInstructions, setCustomInstructions] = useState('');
+
+  const activeDrafting = draftingTarget || localDraftingTarget;
 
   const loadEmails = useCallback(async (preserveSelectionId = null) => {
     setLoading(true);
@@ -36,6 +48,25 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
     }
   }, [onShowToast]);
 
+  // When a newly created email arrives from App.jsx, inject it immediately!
+  useEffect(() => {
+    if (newlyCreatedEmail && newlyCreatedEmail._id) {
+      setEmails(prev => {
+        const filtered = prev.filter(e => e._id !== newlyCreatedEmail._id);
+        return [newlyCreatedEmail, ...filtered];
+      });
+      setSelectedEmailId(newlyCreatedEmail._id);
+      if (onDraftHandled) onDraftHandled();
+    }
+  }, [newlyCreatedEmail, onDraftHandled]);
+
+  // When preselectedEmailId changes, select it
+  useEffect(() => {
+    if (preselectedEmailId) {
+      setSelectedEmailId(preselectedEmailId);
+    }
+  }, [preselectedEmailId]);
+
   const handleQuickSeedDraft = async () => {
     if (!companies || companies.length === 0) {
       if (onSwitchTab) onSwitchTab('sponsors');
@@ -44,8 +75,10 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
     }
     const target = companies[0];
     const targetId = target._id || target.id;
+    const targetName = target.name || target.company || 'Top Sponsor';
     setAutoDrafting(true);
-    onShowToast(`Generating AI proposal draft for ${target.name || target.company}...`, 'info');
+    setLocalDraftingTarget({ companyId: targetId, companyName: targetName });
+    onShowToast(`⚡ Generating AI proposal draft for ${targetName}...`, 'info');
     try {
       const { res, data } = await api.generateDraft(targetId);
       if (res.ok) {
@@ -54,8 +87,16 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
         } else {
           onShowToast('Draft created successfully! Review and approve below.', 'success');
         }
-        const generatedEmailId = data?.data?.email?._id || data?.email?._id;
-        await loadEmails(generatedEmailId);
+        const createdEmail = data?.data?.email || data?.email;
+        if (createdEmail) {
+          if (!createdEmail.companyId || typeof createdEmail.companyId === 'string') {
+            createdEmail.companyId = target;
+          }
+          setEmails(prev => [createdEmail, ...prev.filter(e => e._id !== createdEmail._id)]);
+          setSelectedEmailId(createdEmail._id);
+        } else {
+          await loadEmails();
+        }
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to generate draft', 'error');
@@ -64,6 +105,7 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
       onShowToast(err.message, 'error');
     } finally {
       setAutoDrafting(false);
+      setLocalDraftingTarget(null);
     }
   };
 
@@ -392,9 +434,25 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
           </div>
 
           <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1">
-            {loading && emails.length === 0 ? (
+            {activeDrafting && (
+              <div className="p-3 rounded-lg border border-emerald-500/50 bg-emerald-950/25 text-left space-y-1 relative overflow-hidden animate-pulse">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-emerald-300 text-xs flex items-center space-x-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping mr-1"></span>
+                    AI Drafting for {activeDrafting.companyName}...
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-500/40">
+                    ⚡ GENERATING
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Synthesizing 6-factor score, tier alignment &amp; custom deliverables...
+                </p>
+              </div>
+            )}
+            {loading && emails.length === 0 && !activeDrafting ? (
               <div className="text-xs text-slate-500 text-center py-8">Loading email drafts...</div>
-            ) : emails.length === 0 ? (
+            ) : emails.length === 0 && !activeDrafting ? (
               <div className="text-xs text-slate-500 text-center py-8 space-y-3 px-2">
                 <div className="text-2xl">📬</div>
                 <p className="font-medium text-slate-400">No drafts in approval queue.</p>
@@ -504,23 +562,44 @@ export default function ApprovalTab({ onShowToast, onRefreshStats, onSwitchTab, 
         {/* Draft Reviewer & Actions (Right) */}
         <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between min-h-[550px]">
           {!selectedEmail ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-24 space-y-3 text-center">
-              <span className="text-3xl">📝</span>
-              <p className="text-slate-400 font-medium">Select an email draft from the left to inspect, edit, or approve.</p>
-              <p className="text-[11px] text-slate-500 max-w-sm">
-                Organizers retain total control. You can edit subjects and bodies directly, request AI angle regenerations, or approve for Gmail dispatch.
-              </p>
-              {emails.length === 0 && companies.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleQuickSeedDraft}
-                  disabled={autoDrafting}
-                  className="mt-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md transition disabled:opacity-50"
-                >
-                  {autoDrafting ? 'Generating AI Proposal...' : `⚡ Generate Sample Draft for ${companies[0].name || 'Sponsor'}`}
-                </button>
-              )}
-            </div>
+            activeDrafting ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs py-20 space-y-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-3xl animate-bounce">
+                  ✍️
+                </div>
+                <div className="space-y-1.5 max-w-md">
+                  <h3 className="text-base font-bold text-white flex items-center justify-center space-x-2">
+                    <span>Drafting AI Proposal for</span>
+                    <span className="text-emerald-400 font-semibold">{activeDrafting.companyName}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Gemini AI is crafting a personalized, high-conversion sponsorship proposal tailored to your hackathon tier and sponsor intelligence.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 font-mono text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>Generating proposal &bull; Landing directly in queue...</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-24 space-y-3 text-center">
+                <span className="text-3xl">📝</span>
+                <p className="text-slate-400 font-medium">Select an email draft from the left to inspect, edit, or approve.</p>
+                <p className="text-[11px] text-slate-500 max-w-sm">
+                  Organizers retain total control. You can edit subjects and bodies directly, request AI angle regenerations, or approve for Gmail dispatch.
+                </p>
+                {emails.length === 0 && companies.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleQuickSeedDraft}
+                    disabled={autoDrafting}
+                    className="mt-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md transition disabled:opacity-50"
+                  >
+                    {autoDrafting ? 'Generating AI Proposal...' : `⚡ Generate Sample Draft for ${companies[0].name || 'Sponsor'}`}
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <div className="space-y-4">
               {/* Header */}

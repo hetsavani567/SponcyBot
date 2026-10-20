@@ -6,7 +6,8 @@ export default function OutreachTab({
   onOpenTimeline,
   onOpenSimulateReply,
   onShowToast,
-  onRefreshStats
+  onRefreshStats,
+  refreshTrigger = 0
 }) {
   const [outreaches, setOutreaches] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,7 @@ export default function OutreachTab({
 
   useEffect(() => {
     loadOutreach(filterMode);
-  }, [filterMode, loadOutreach]);
+  }, [filterMode, loadOutreach, refreshTrigger]);
 
   const handleRegisterFollowUp = async (outreachId) => {
     try {
@@ -197,7 +198,7 @@ export default function OutreachTab({
 
                   const count = o.followUpCount || 0;
                   const isCapped = count >= 2;
-                  const compName = o.companyId?.name || 'Sponsor';
+                  const compName = o.companyId?.name || (typeof o.companyId === 'string' ? o.companyId : 'Sponsor Company');
 
                   return (
                     <tr key={o._id} className="hover:bg-slate-800/40 transition">

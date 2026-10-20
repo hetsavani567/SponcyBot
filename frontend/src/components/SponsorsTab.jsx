@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function SponsorsTab({
   companies = [],
   loading,
+  draftingCompanyId = null,
   onOpenAddModal,
   onResearch,
   onGenerateDraft,
@@ -12,7 +13,7 @@ export default function SponsorsTab({
 }) {
   const [filterCategory, setFilterCategory] = useState('All');
 
-  const categories = ['All', 'Technology', 'Cloud & Developer Tools', 'AI & Data', 'Finance', 'Education', 'Other'];
+  const categories = ['All', 'Technology', 'Cloud & Developer Tools', 'AI & Data', 'Finance', 'Education', 'Food & Beverage', 'E-commerce', 'Other'];
 
   const filtered = filterCategory === 'All'
     ? companies
@@ -154,10 +155,15 @@ export default function SponsorsTab({
                           </button>
                           <button
                             onClick={() => onGenerateDraft(compId)}
+                            disabled={draftingCompanyId === compId}
                             title="Generate AI proposal draft"
-                            className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px]"
+                            className={`px-2 py-1 rounded border transition text-[11px] flex items-center space-x-1 ${
+                              draftingCompanyId === compId
+                                ? 'bg-emerald-600/40 text-emerald-200 border-emerald-500/50 cursor-wait'
+                                : 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border-emerald-500/30'
+                            }`}
                           >
-                            ✍️ Draft
+                            <span>{draftingCompanyId === compId ? '⏳ Drafting...' : '✍️ Draft'}</span>
                           </button>
                           <button
                             onClick={() => onAssign(compId)}

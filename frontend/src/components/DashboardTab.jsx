@@ -20,7 +20,7 @@ export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmai
             </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            <strong className="text-slate-300">Golden Rule:</strong> AI generates draft &rarr; Human reviews &rarr; Human approves &rarr; Gmail sends it.{' '}
+            <strong className="text-slate-300">Golden Rule:</strong> AI generates draft &rarr; Human reviews &rarr; Human approves &rarr; Verified Mailer sends it.{' '}
             <span className="text-emerald-400">Send Guard prevents any unapproved sends.</span>
           </p>
         </div>
@@ -35,7 +35,7 @@ export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmai
             onClick={onOpenGmailModal}
             className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition shadow-sm flex items-center space-x-1.5"
           >
-            <span>🔗 Manage Gmail</span>
+            <span>✉️ Mailbox Settings</span>
           </button>
         </div>
       </div>

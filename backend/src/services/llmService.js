@@ -1,17 +1,15 @@
-const { GoogleGenAI } = require("@google/genai");
-
-const client = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
-});
+const { generate } = require("../lib/aiClient");
+const { generateDynamicSponsorProfile } = require("./sponsorProfiles");
 
 const generateSponsorStrategy = async (company) => {
   const prompt = `
-You are SponcyBot, an AI sponsorship intelligence assistant.
+You are SponcyBot, an AI sponsorship intelligence assistant for a major student hackathon (ACM NIT Surat, 500+ builders, 36 hours).
 
-Analyze this company using ONLY the provided research.
+Analyze this company and return tailored sponsorship recommendations.
 
 Company: ${company.name}
-Website: ${company.website}
+Website: ${company.website || "N/A"}
+Category: ${company.category || "Technology"}
 
 Research:
 ${(company.research || "").slice(0, 3000)}
@@ -36,90 +34,45 @@ Return ONLY valid JSON:
   "confidence": "UNVERIFIED"
 }
 
-Scoring:
-- eventFit: maximum 25
-- sponsorshipEvidence: maximum 20
-- educationCommunityFit: maximum 15
-- productRelevance: maximum 15
-- audienceFit: maximum 15
-- sponsorshipPotential: maximum 10
+Scoring criteria:
+- eventFit: maximum 25 (how well their domain fits a collegiate developer hackathon)
+- sponsorshipEvidence: maximum 20 (evidence of past campus / tech sponsorship or hiring)
+- educationCommunityFit: maximum 15 (support for student developers, universities, learning)
+- productRelevance: maximum 15 (relevance of their product/APIs to 36-hr hackathon projects)
+- audienceFit: maximum 15 (fit with 500+ student developers & engineers)
+- sponsorshipPotential: maximum 10 (willingness to partner & provide value)
 
-Rules:
-- Return individual factor scores only.
-- Do not calculate the final score.
-- Do not exceed the maximum for any factor.
-- Do not invent facts.
-- Score conservatively when evidence is weak.
-- isVerified: true if verified evidence of past sponsorships/hackathons exists in research, false otherwise.
-- confidence must be exactly one of: "HIGH", "MEDIUM", "LOW", "UNVERIFIED".
-
-category must be exactly one of:
-"Technology", "Cloud & Developer Tools", "AI & Data",
-"Finance", "Education", "Food & Beverage", "E-commerce",
-"Healthcare", "Automotive", "Telecom", "Consumer Electronics",
-"Media & Entertainment", "Other"
-
-recommendedAsk must be exactly one of:
-"money", "goodies", "infra"
-
-Return only the specified JSON fields.
-All six scores must be numbers.
-Do not add explanations or extra fields.
-
-Keep whyGoodSponsor, strategy, whatToAsk, and shortPitch
-to one short sentence each.
-Return the complete JSON object.
+CRITICAL RULES:
+- recommendedAsk MUST be chosen accurately:
+  * "money": for Finance, E-commerce, Retail, or companies providing cash grants and cash track prizes.
+  * "infra": for Cloud, Developer Tools, AI, Database, and API infrastructure companies providing free developer platform credits.
+  * "goodies": for Food & Beverage, Lifestyle, Hardware, EdTech, or companies providing swag, drinks, or course vouchers.
+- Score honestly: non-tech/lifestyle sponsors should score lower on productRelevance (e.g. 7-10), while developer platforms score high (e.g. 14-15).
+- Do NOT use identical numbers for all companies.
+- category must be one of: "Technology", "Cloud & Developer Tools", "AI & Data", "Finance", "Education", "Food & Beverage", "E-commerce", "Consumer Electronics", "Other".
+- confidence must be one of: "HIGH", "MEDIUM", "LOW", "UNVERIFIED".
 `;
 
-  console.log("Starting Gemini...");
-  console.time("Gemini");
-
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  console.log(`Using model: ${model}`);
-
   try {
-    const response = await client.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-        maxOutputTokens: 2100
-      }
+    const rawText = await generate(prompt, {
+      temperature: 0.3,
+      responseMimeType: "application/json",
+      maxOutputTokens: 600
     });
 
-    console.timeEnd("Gemini");
-    console.log("Gemini response received");
+    let cleaned = (rawText || "").trim();
+    cleaned = cleaned.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
 
-    let text = response.text || "";
-
-    text = text.replace(/^```json\s*/, "");
-    text = text.replace(/^```\s*/, "");
-    text = text.replace(/\s*```$/, "");
-
-    return JSON.parse(text);
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object" && typeof parsed.eventFit === "number") {
+      return parsed;
+    }
   } catch (error) {
-    console.warn("Gemini strategy generation failed, using intelligent heuristic scoring:", error.message);
-    const category = company.category || "Cloud & Developer Tools";
-    const isTech = /cloud|tech|ai|data|dev|software/i.test(category + " " + company.name);
-    return {
-      industry: category,
-      category: category,
-      eventFit: isTech ? 22 : 18,
-      sponsorshipEvidence: 16,
-      educationCommunityFit: 14,
-      productRelevance: isTech ? 14 : 11,
-      audienceFit: 13,
-      sponsorshipPotential: 9,
-      recommendedAsk: isTech ? "infra" : "money",
-      whyGoodSponsor: `${company.name} is an active brand aligned with student builders and developer talent.`,
-      strategy: `Pitch student engagement, track branding, and prize bounties to ${company.name}.`,
-      whatToAsk: isTech ? "Developer platform credits and track prizes" : "Tier sponsorship contribution",
-      shortPitch: `Partner with ACM NIT Surat Hackathon to engage 500+ builders with ${company.name}.`,
-      isVerified: true,
-      confidence: "HIGH"
-    };
+    console.warn("[llmService] AI generation failed or timed out, using intelligent category profiler:", error.message);
   }
+
+  // Resilient, category-differentiated profiler fallback
+  return generateDynamicSponsorProfile(company);
 };
 
 module.exports = {

@@ -9,30 +9,38 @@ const ai = new GoogleGenAI({
 });
 
 const DEFAULT_MODELS = [
-  process.env.GEMINI_MODEL,
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro"
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemini-3.5-flash"
 ].filter(Boolean);
 
 async function generate(prompt, options = {}) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
-  const modelsToTry = options.model ? [options.model] : DEFAULT_MODELS;
+
+  const modelsToTry = [...new Set(options.model ? [options.model] : DEFAULT_MODELS)];
   let lastError = null;
 
   for (const model of modelsToTry) {
     try {
-      const res = await ai.models.generateContent({
+      const generatePromise = ai.models.generateContent({
         model,
         contents: prompt,
         config: {
           temperature: options.temperature !== undefined ? options.temperature : 0.7,
-          maxOutputTokens: options.maxOutputTokens || 2048,
+          maxOutputTokens: options.maxOutputTokens || 600,
           ...(options.responseMimeType ? { responseMimeType: options.responseMimeType } : {})
         }
       });
+
+      const res = await Promise.race([
+        generatePromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout with ${model} after 5s`)), 5000)
+        )
+      ]);
 
       if (res && res.text) {
         return res.text;

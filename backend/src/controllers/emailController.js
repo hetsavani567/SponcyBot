@@ -16,17 +16,22 @@ const {
 const { EmailVersion } = require("../models/emailVersion");
 const { ApprovalLog } = require("../models/approvalLog");
 
-/**
- * Helper to fetch company from DB
- */
 async function resolveCompany(companyId) {
   if (!companyId) return null;
 
-  if (mongoose.Types.ObjectId.isValid(companyId)) {
-    return Company.findById(companyId);
+  if (mongoose.connection.readyState === 1) {
+    try {
+      if (mongoose.Types.ObjectId.isValid(companyId)) {
+        const found = await Company.findById(companyId);
+        if (found) return found;
+      }
+      const foundByName = await Company.findOne({ name: String(companyId).trim() });
+      if (foundByName) return foundByName;
+    } catch {}
   }
 
-  return Company.findOne({ name: String(companyId).trim() });
+  const { getCompanyById } = require("./companyController");
+  return getCompanyById(companyId);
 }
 
 /**
@@ -98,6 +103,20 @@ const generateEmail = async (req, res) => {
       status: "PENDING_APPROVAL"
     });
 
+    // Populate company details so the frontend immediately displays company info without extra round-trip
+    let responseEmail = email;
+    if (email && typeof email.populate === "function") {
+      try {
+        await email.populate("companyId");
+        responseEmail = email;
+      } catch (_) {}
+    }
+    if (responseEmail && (!responseEmail.companyId || typeof responseEmail.companyId !== "object" || !responseEmail.companyId.name)) {
+      const emailObj = responseEmail.toObject ? responseEmail.toObject() : { ...responseEmail };
+      emailObj.companyId = company;
+      responseEmail = emailObj;
+    }
+
     return res.status(201).json({
       success: true,
       message: draft.usedFallback
@@ -105,7 +124,7 @@ const generateEmail = async (req, res) => {
         : "Email generated successfully",
       usedFallback: !!draft.usedFallback,
       data: {
-        email,
+        email: responseEmail,
         version: emailVersion
       }
     });
