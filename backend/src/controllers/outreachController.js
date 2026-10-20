@@ -3,6 +3,7 @@ const { Outreach, OUTREACH_STATUSES } = require("../models/outreach");
 const OutreachEvent = require("../models/outreachEvent");
 const TeamMember = require("../models/teamMember");
 const Company = require("../models/company");
+const serverCache = require("../services/cacheService");
 const {
   processFollowUp,
   closeOutreach,
@@ -69,9 +70,13 @@ const createOutreach = async (req, res) => {
       metadata: { companyName: company.name, memberName: member.name }
     });
 
+    serverCache.invalidateTag("outreach");
+    serverCache.invalidateTag("stats");
+
     const populatedOutreach = await Outreach.findById(outreach._id)
       .populate("companyId", "name website category score recommendedTier recommendedAsk")
-      .populate("memberId", "name email role");
+      .populate("memberId", "name email role")
+      .lean();
 
     res.status(201).json(populatedOutreach);
   } catch (error) {
@@ -87,25 +92,31 @@ const getAllOutreach = async (req, res) => {
     }
 
     const { status, memberId, companyId } = req.query;
-    const filter = {};
+    const cacheKey = `outreach_list_${status || "all"}_${memberId || "all"}_${companyId || "all"}`;
 
-    if (status) {
-      filter.status = status;
-    }
+    const outreaches = await serverCache.getOrSet(cacheKey, async () => {
+      const filter = {};
 
-    if (memberId && isValidObjectId(memberId)) {
-      filter.memberId = memberId;
-    }
+      if (status) {
+        filter.status = status;
+      }
 
-    if (companyId && isValidObjectId(companyId)) {
-      filter.companyId = companyId;
-    }
+      if (memberId && isValidObjectId(memberId)) {
+        filter.memberId = memberId;
+      }
 
-    const outreaches = await Outreach.find(filter)
-      .populate("companyId", "name website industry category score recommendedTier recommendedAsk contactName contactEmail")
-      .populate("memberId", "name email role")
-      .sort({ updatedAt: -1 });
+      if (companyId && isValidObjectId(companyId)) {
+        filter.companyId = companyId;
+      }
 
+      return await Outreach.find(filter)
+        .populate("companyId", "name website industry category score recommendedTier recommendedAsk contactName contactEmail")
+        .populate("memberId", "name email role")
+        .sort({ updatedAt: -1 })
+        .lean();
+    }, 15, "outreach");
+
+    res.setHeader("Cache-Control", "private, no-cache");
     res.json(outreaches);
   } catch (error) {
     console.error("Get all outreach error:", error);
@@ -116,20 +127,23 @@ const getAllOutreach = async (req, res) => {
 const getPendingFollowUps = async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-      return res.json([]);
+      return res.json({ count: 0, pendingFollowUps: [] });
     }
 
-    const now = new Date();
+    const pending = await serverCache.getOrSet("outreach_pending_followups", async () => {
+      const now = new Date();
+      return await Outreach.find({
+        nextFollowUpAt: { $lte: now },
+        followUpCount: { $lt: 2 },
+        status: { $nin: ["CLOSED", "DECLINED", "INTERESTED", "MEETING"] }
+      })
+        .populate("companyId", "name website category score recommendedTier recommendedAsk contactName contactEmail")
+        .populate("memberId", "name email role")
+        .sort({ nextFollowUpAt: 1 })
+        .lean();
+    }, 10, "outreach");
 
-    const pending = await Outreach.find({
-      nextFollowUpAt: { $lte: now },
-      followUpCount: { $lt: 2 },
-      status: { $nin: ["CLOSED", "DECLINED", "INTERESTED", "MEETING"] }
-    })
-      .populate("companyId", "name website category score recommendedTier recommendedAsk contactName contactEmail")
-      .populate("memberId", "name email role")
-      .sort({ nextFollowUpAt: 1 });
-
+    res.setHeader("Cache-Control", "private, no-cache");
     res.json({
       count: pending.length,
       pendingFollowUps: pending

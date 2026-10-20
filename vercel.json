@@ -24,9 +24,6 @@
     },
     {
       "src": "/(.*)",
-      "headers": {
-        "cache-control": "no-cache, no-store, must-revalidate"
-      },
       "dest": "backend/src/server.js"
     }
   ]

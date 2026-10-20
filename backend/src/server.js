@@ -15,8 +15,13 @@ const teamMemberRoutes = require("./routes/teamMemberRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const gmailRoutes = require("./routes/gmailRoutes");
 const authRoutes = require("./routes/authRoutes");
+const bootstrapRoutes = require("./routes/bootstrapRoutes");
 
 const app = express();
+app.set("etag", "strong");
+
+// In-memory resolved static asset path cache to prevent repeated filesystem traversals
+const resolvedAssetPaths = new Map();
 
 // Determine static frontend path: check process.cwd() (cloud hosts/Vercel) and __dirname (local dev)
 const candidateDirs = [
@@ -47,23 +52,33 @@ app.use((req, res, next) => {
   const assetSubpath = req.path.replace(/^\/assets\//, "");
   const cleanSubpath = path.normalize(assetSubpath).replace(/^(\.\.[\/\\])+/, "");
 
+  const sendWithHeaders = (filePath) => {
+    if (cleanSubpath.endsWith(".js")) {
+      res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    } else if (cleanSubpath.endsWith(".css")) {
+      res.setHeader("Content-Type", "text/css; charset=utf-8");
+    } else if (cleanSubpath.endsWith(".svg")) {
+      res.setHeader("Content-Type", "image/svg+xml");
+    } else if (cleanSubpath.endsWith(".json")) {
+      res.setHeader("Content-Type", "application/json");
+    }
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return res.sendFile(filePath);
+  };
+
+  // Instant cache hit
+  if (resolvedAssetPaths.has(cleanSubpath)) {
+    return sendWithHeaders(resolvedAssetPaths.get(cleanSubpath));
+  }
+
   for (const baseDir of candidateDirs) {
     const fullPath = path.join(baseDir, "assets", cleanSubpath);
     if (fs.existsSync(fullPath)) {
       try {
         const stat = fs.statSync(fullPath);
         if (stat.isFile()) {
-          if (cleanSubpath.endsWith(".js")) {
-            res.setHeader("Content-Type", "application/javascript; charset=utf-8");
-          } else if (cleanSubpath.endsWith(".css")) {
-            res.setHeader("Content-Type", "text/css; charset=utf-8");
-          } else if (cleanSubpath.endsWith(".svg")) {
-            res.setHeader("Content-Type", "image/svg+xml");
-          } else if (cleanSubpath.endsWith(".json")) {
-            res.setHeader("Content-Type", "application/json");
-          }
-          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-          return res.sendFile(fullPath);
+          resolvedAssetPaths.set(cleanSubpath, fullPath);
+          return sendWithHeaders(fullPath);
         }
       } catch (e) {}
     }
@@ -76,13 +91,8 @@ app.use((req, res, next) => {
       try {
         const stat = fs.statSync(fullPath);
         if (stat.isFile()) {
-          if (cleanSubpath.endsWith(".js")) {
-            res.setHeader("Content-Type", "application/javascript; charset=utf-8");
-          } else if (cleanSubpath.endsWith(".css")) {
-            res.setHeader("Content-Type", "text/css; charset=utf-8");
-          }
-          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-          return res.sendFile(fullPath);
+          resolvedAssetPaths.set(cleanSubpath, fullPath);
+          return sendWithHeaders(fullPath);
         }
       } catch (e) {}
     }
@@ -158,7 +168,31 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Proactive serverless DB connection middleware: ensures MongoDB connection is established before route handlers run
+app.use(async (req, res, next) => {
+  if (req.method !== "OPTIONS" && (
+    req.path.startsWith("/auth") ||
+    req.path.startsWith("/companies") ||
+    req.path.startsWith("/gmail") ||
+    req.path.startsWith("/outreach") ||
+    req.path.startsWith("/emails") ||
+    req.path.startsWith("/team-members") ||
+    req.path.startsWith("/bootstrap") ||
+    req.path.startsWith("/api")
+  )) {
+    try {
+      const mongoose = require("mongoose");
+      if (mongoose.connection.readyState !== 1) {
+        await connectDB();
+      }
+    } catch (_) {}
+  }
+  next();
+});
+
 // API Routes
+app.use("/api", bootstrapRoutes);
+app.use("/bootstrap", bootstrapRoutes);
 app.use("/auth", authRoutes);
 app.use("/companies", companyRoutes);
 app.use("/llm", llmRoutes);
@@ -184,6 +218,7 @@ app.use((req, res, next) => {
     req.path.startsWith("/llm") ||
     req.path.startsWith("/emails") ||
     req.path.startsWith("/team-members") ||
+    req.path.startsWith("/bootstrap") ||
     req.path.startsWith("/api") ||
     req.path.startsWith("/health") ||
     req.path.startsWith("/assets");
