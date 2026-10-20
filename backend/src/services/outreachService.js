@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const { Outreach, OUTREACH_STATUSES } = require("../models/outreach");
 const OutreachEvent = require("../models/outreachEvent");
 const Company = require("../models/company");
+const serverCache = require("./cacheService");
 
 const recordEvent = async ({
   outreachId,
@@ -49,6 +50,8 @@ const processFollowUp = async (outreach, { emailId = null, notes = "" } = {}) =>
     outreach.closedReason = "MAX_FOLLOWUPS_REACHED: Stopped outreach after 2 follow-ups to prevent spamming";
     outreach.nextFollowUpAt = null;
     await outreach.save();
+    serverCache.invalidateTag("outreach");
+    serverCache.invalidateTag("stats");
 
     await recordEvent({
       outreachId: outreach._id,
@@ -86,6 +89,8 @@ const processFollowUp = async (outreach, { emailId = null, notes = "" } = {}) =>
   }
 
   await outreach.save();
+  serverCache.invalidateTag("outreach");
+  serverCache.invalidateTag("stats");
 
   await recordEvent({
     outreachId: outreach._id,
@@ -112,6 +117,8 @@ const closeOutreach = async (outreach, reason = "Closed by organizer") => {
   outreach.closedReason = reason;
   outreach.nextFollowUpAt = null;
   await outreach.save();
+  serverCache.invalidateTag("outreach");
+  serverCache.invalidateTag("stats");
 
   await recordEvent({
     outreachId: outreach._id,
@@ -166,6 +173,8 @@ const updateOutreachStatus = async (outreach, newStatus, { reason = "", meetingL
   }
 
   await outreach.save();
+  serverCache.invalidateTag("outreach");
+  serverCache.invalidateTag("stats");
 
   let eventType = "STATUS_CHANGED";
   if (newStatus === "EMAIL_SENT" || newStatus === "SENT") eventType = "EMAIL_SENT";
@@ -206,7 +215,10 @@ const getStats = async () => {
     };
   }
 
-  const allOutreaches = await Outreach.find().populate("companyId", "recommendedTier recommendedAsk");
+  const allOutreaches = await Outreach.find()
+    .select("status followUpCount lastReplyAt nextFollowUpAt companyId")
+    .populate("companyId", "recommendedTier recommendedAsk")
+    .lean();
   const total = allOutreaches.length;
 
   const statusCounts = {};

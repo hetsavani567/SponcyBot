@@ -2,7 +2,7 @@
 const mongoose = require("mongoose");
 const Company = require("../models/company");
 const { analyzeCompany } = require("../services/sponsorIntelligence");
-
+const serverCache = require("../services/cacheService");
 const { generateDynamicSponsorProfile } = require("../services/sponsorProfiles");
 
 const getScoreBreakdown = (company) => ({
@@ -94,6 +94,7 @@ const research = async (req, res) => {
       }
       await company.save();
       inMemoryCompanies.set(String(company._id || company.id), company);
+      serverCache.invalidateTag("companies");
 
       return res.json({
         ...company.toObject(),
@@ -107,6 +108,7 @@ const research = async (req, res) => {
       }
       company.updatedAt = new Date();
       inMemoryCompanies.set(String(company._id || company.id), company);
+      serverCache.invalidateTag("companies");
 
       return res.json({
         ...company,
@@ -421,6 +423,8 @@ const addCompany = async (req, res) => {
 
     // Always store in in-memory map
     inMemoryCompanies.set(String(savedCompany._id || savedCompany.id), savedCompany);
+    serverCache.invalidateTag("companies");
+    serverCache.invalidateTag("stats");
 
     // Asynchronously enrich with live Tavily research without blocking user response
     setTimeout(async () => {
@@ -431,6 +435,7 @@ const addCompany = async (req, res) => {
             await analyzeCompany(doc);
             await doc.save();
             inMemoryCompanies.set(String(doc._id), doc);
+            serverCache.invalidateTag("companies");
           }
         }
       } catch (bgErr) {
@@ -448,17 +453,35 @@ const addCompany = async (req, res) => {
   }
 };
 
+const rankCompaniesInternal = async () => {
+  return await serverCache.getOrSet("ranked_companies", async () => {
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const companies = await Company.find({}).sort({ score: -1, createdAt: -1 }).lean();
+        if (companies.length > 0) {
+          companies.forEach(c => inMemoryCompanies.set(String(c._id || c.id), c));
+          return companies.map(formatRankedCompany);
+        }
+      } catch (err) {
+        console.warn("[CompanyController] DB query warning:", err.message);
+      }
+    }
+    return Array.from(inMemoryCompanies.values()).map(formatRankedCompany);
+  }, 30, "companies");
+};
+
 const getCompanies = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      try {
-        const connectDB = require("../config/db");
-        await connectDB();
-      } catch {}
+    const { category, minScore } = req.query;
+
+    // Fast path: if requesting all companies without filters, return cached rankings directly
+    if (!category && (minScore === undefined || minScore === "")) {
+      const list = await rankCompaniesInternal();
+      res.setHeader("Cache-Control", "private, no-cache");
+      return res.json(list);
     }
 
     if (mongoose.connection.readyState === 1) {
-      const { category, minScore } = req.query;
       const filter = {};
 
       if (category) {
@@ -475,13 +498,15 @@ const getCompanies = async (req, res) => {
         }
       }
 
-      const companies = await Company.find(filter).sort({ score: -1, createdAt: -1 });
+      const companies = await Company.find(filter).sort({ score: -1, createdAt: -1 }).lean();
       if (companies.length > 0) {
         companies.forEach(c => inMemoryCompanies.set(String(c._id || c.id), c));
+        res.setHeader("Cache-Control", "private, no-cache");
         return res.json(companies);
       }
     }
 
+    res.setHeader("Cache-Control", "private, no-cache");
     return res.json(Array.from(inMemoryCompanies.values()));
   } catch (error) {
     console.error("Get companies error:", error.message);
@@ -491,22 +516,9 @@ const getCompanies = async (req, res) => {
 
 const rankCompanies = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      try {
-        const connectDB = require("../config/db");
-        await connectDB();
-      } catch {}
-    }
-
-    if (mongoose.connection.readyState === 1) {
-      const companies = await Company.find({}).sort({ score: -1, createdAt: -1 });
-      if (companies.length > 0) {
-        companies.forEach(c => inMemoryCompanies.set(String(c._id || c.id), c));
-        return res.json(companies.map(formatRankedCompany));
-      }
-    }
-
-    return res.json(Array.from(inMemoryCompanies.values()).map(formatRankedCompany));
+    const ranked = await rankCompaniesInternal();
+    res.setHeader("Cache-Control", "private, no-cache");
+    return res.json(ranked);
   } catch (error) {
     console.error("Rank companies error:", error.message);
     res.status(200).json(Array.from(inMemoryCompanies.values()).map(formatRankedCompany));
@@ -649,6 +661,8 @@ const updateCompany = async (req, res) => {
       });
     }
 
+    serverCache.invalidateTag("companies");
+
     res.json({
       message: "Company updated successfully",
       company
@@ -677,6 +691,9 @@ const deleteCompany = async (req, res) => {
       inMemoryCompanies.delete(String(id));
     }
 
+    serverCache.invalidateTag("companies");
+    serverCache.invalidateTag("stats");
+
     return res.json({
       message: "Company deleted successfully",
       company: deleted || { _id: id }
@@ -695,6 +712,7 @@ module.exports = {
   getCompany,
   research,
   rankCompanies,
+  rankCompaniesInternal,
   getTopCompanies,
   recommendCompanies,
   getCompanyById,

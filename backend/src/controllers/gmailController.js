@@ -6,6 +6,7 @@ const {
   connectDemoAccount,
   disconnectAccount
 } = require("../services/gmailService");
+const serverCache = require("../services/cacheService");
 
 /**
  * GET /gmail/oauth/start
@@ -245,6 +246,9 @@ const sendEmail = async (req, res) => {
     // 1. Transition Email status to SENT
     email.status = "SENT";
     await email.save();
+    serverCache.invalidateTag("emails");
+    serverCache.invalidateTag("stats");
+    serverCache.invalidateTag("outreach");
 
     // 2. Synchronize with Outreach CRM
     let outreach = null;
@@ -568,18 +572,14 @@ const confirmReplyHandler = async (req, res) => {
   }
 };
 
-/**
- * GET /gmail/stats
- * Aggregates dashboard statistics across all 4 modules (Sponsors, Emails, Outreach, Gmail)
- */
-const getSystemStats = async (req, res) => {
-  try {
+const getSystemStatsInternal = async () => {
+  return await serverCache.getOrSet("system_stats", async () => {
     const Company = require("../models/company");
     const { Email } = require("../models/email");
-    const { Outreach } = require("../models/outreach");
     const { ApprovalLog } = require("../models/approvalLog");
     const { GmailThread } = require("../models/gmailThread");
     const { getStats } = require("../services/outreachService");
+    const mongoose = require("mongoose");
 
     let totalCompanies = 0;
     let pendingApprovals = 0;
@@ -589,7 +589,6 @@ const getSystemStats = async (req, res) => {
     let totalThreads = 0;
     let outreachMetrics = {};
 
-    const mongoose = require("mongoose");
     if (mongoose.connection.readyState === 1) {
       [
         totalCompanies,
@@ -612,23 +611,35 @@ const getSystemStats = async (req, res) => {
       outreachMetrics = await getStats();
     }
 
+    return {
+      sponsors: {
+        total: totalCompanies
+      },
+      emails: {
+        pendingApproval: pendingApprovals,
+        totalSent: totalEmailsSent,
+        approvalsGiven: totalApproved,
+        rejectionsGiven: totalRejected
+      },
+      gmail: {
+        trackedThreads: totalThreads
+      },
+      outreach: outreachMetrics
+    };
+  }, 10, "stats");
+};
+
+/**
+ * GET /gmail/stats
+ * Aggregates dashboard statistics across all 4 modules (Sponsors, Emails, Outreach, Gmail)
+ */
+const getSystemStats = async (req, res) => {
+  try {
+    const statsData = await getSystemStatsInternal();
+    res.setHeader("Cache-Control", "private, no-cache");
     return res.status(200).json({
       success: true,
-      data: {
-        sponsors: {
-          total: totalCompanies
-        },
-        emails: {
-          pendingApproval: pendingApprovals,
-          totalSent: totalEmailsSent,
-          approvalsGiven: totalApproved,
-          rejectionsGiven: totalRejected
-        },
-        gmail: {
-          trackedThreads: totalThreads
-        },
-        outreach: outreachMetrics
-      }
+      data: statsData
     });
   } catch (error) {
     console.error("[GmailController] getSystemStats error:", error);
@@ -689,5 +700,6 @@ module.exports = {
   classifyReplyHandler,
   confirmReplyHandler,
   getSystemStats,
+  getSystemStatsInternal,
   runSimulationHandler
 };
