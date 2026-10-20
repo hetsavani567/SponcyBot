@@ -122,7 +122,11 @@ export default function App() {
     try {
       const { res, data } = await api.generateDraft(companyId);
       if (res.ok) {
-        showToast('Email proposal draft created! Send Guard requires human review.', 'success');
+        if (data?.usedFallback) {
+          showToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+        } else {
+          showToast('Email proposal draft created! Send Guard requires human review.', 'success');
+        }
         setCurrentTab('approval');
         fetchStats();
       } else {

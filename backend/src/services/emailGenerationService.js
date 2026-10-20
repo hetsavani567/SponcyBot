@@ -77,19 +77,25 @@ function generateFallbackEmail(company, options = {}) {
   const eventName = options.eventName || process.env.EVENT_NAME || "Hackathon 2026";
   const organizerOrg = options.organizerOrg || process.env.ORGANIZER_ORG || "Partnerships Team";
 
+  const requested = (options.requestedSubject || "").trim();
+  const subjectOr = (dflt) => requested || dflt;
+  const topicLine = requested ? `Regarding "${requested}": ` : "";
+
   if (type === "followup1") {
     return {
-      subject: `Following up: ${eventName} x ${company.name} Partnership`,
-      body: `Hi ${contact},\n\nI wanted to quickly follow up on my previous note regarding partnering with ${eventName}. We are locking in our ${tier} tier partners this week for our student developer hackathon.\n\nWould you have 10 minutes this week for a brief introductory call?\n\nBest regards,\n${organizerOrg}`,
+      subject: subjectOr(`Following up: ${eventName} x ${company.name} Partnership`),
+      body: `Hi ${contact},\n\n${topicLine}I wanted to quickly follow up on my previous note regarding partnering with ${eventName}. We are locking in our ${tier} tier partners this week for our student developer hackathon.\n\nWould you have 10 minutes this week for a brief introductory call?\n\nBest regards,\n${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
+      usedFallback: true,
       attempts: 1
     };
   }
   if (type === "followup2") {
     return {
-      subject: `Final follow-up: ${eventName} x ${company.name}`,
-      body: `Hi ${contact},\n\nI understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore developer engagement or challenge prize tracks with ${company.name}, please let us know. Otherwise, we hope to connect for our next edition!\n\nBest regards,\n${organizerOrg}`,
+      subject: subjectOr(`Final follow-up: ${eventName} x ${company.name}`),
+      body: `Hi ${contact},\n\n${topicLine}I understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore developer engagement or challenge prize tracks with ${company.name}, please let us know. Otherwise, we hope to connect for our next edition!\n\nBest regards,\n${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
+      usedFallback: true,
       attempts: 1
     };
   }
@@ -101,9 +107,10 @@ function generateFallbackEmail(company, options = {}) {
     : `${tier} tier cash sponsorship to support prizes, mentorship, and workshops`;
 
   return {
-    subject: `${company.name} x ${eventName} - Partnership Proposal`,
-    body: `Hi ${contact},\n\nWe are organizing ${eventName} bringing together top student developers and designers for our upcoming hackathon.\n\nGiven ${company.name}'s leadership in ${company.category || "technology"} and commitment to developer communities, we would love to invite ${company.name} as a ${tier} partner.\n\nWe are looking to collaborate on ${askText}. In return, we offer dedicated workshop tracks, recruitment access to finalist resumes, and prominent brand visibility.\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerOrg}`,
+    subject: subjectOr(`${company.name} x ${eventName} - Partnership Proposal`),
+    body: `Hi ${contact},\n\n${topicLine}We are organizing ${eventName} bringing together top student developers and designers for our upcoming hackathon.\n\nGiven ${company.name}'s leadership in ${company.category || "technology"} and commitment to developer communities, we would love to invite ${company.name} as a ${tier} partner.\n\nWe are looking to collaborate on ${askText}. In return, we offer dedicated workshop tracks, recruitment access to finalist resumes, and prominent brand visibility.\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerOrg}`,
     promptUsed: "Resilient Fallback Engine",
+    usedFallback: true,
     attempts: 1
   };
 }
@@ -130,6 +137,9 @@ async function generateEmailDraft(company, options = {}) {
       });
 
       const validated = parseAndValidateEmailResponse(rawResponse);
+      if (options.requestedSubject && options.requestedSubject.trim()) {
+        validated.subject = options.requestedSubject.trim();
+      }
       return {
         ...validated,
         promptUsed: prompt,

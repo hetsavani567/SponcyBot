@@ -1,5 +1,9 @@
 const { GoogleGenAI } = require("@google/genai");
 
+if (!process.env.GEMINI_API_KEY) {
+  console.error("[aiClient] GEMINI_API_KEY is not set. Every AI draft will fall back to the generic template.");
+}
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
@@ -12,6 +16,9 @@ const DEFAULT_MODELS = [
 ].filter(Boolean);
 
 async function generate(prompt, options = {}) {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
   const modelsToTry = options.model ? [options.model] : DEFAULT_MODELS;
   let lastError = null;
 

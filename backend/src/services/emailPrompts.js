@@ -59,6 +59,7 @@ function buildEmailPrompt(company, options = {}) {
     customInstructions = "",
     previousSubject = "",
     previousBody = "",
+    requestedSubject = "",
     isRegeneration = false,
     organizerName = process.env.ORGANIZER_NAME || "Mahathi K.",
     organizerRole = process.env.ORGANIZER_ROLE || "Lead, Sponsorships & Partnerships",
@@ -155,6 +156,10 @@ Earlier email already sent (for context only, do not repeat it):
 ${previousBody.slice(0, 1500)}
 `;
   }
+  const subjectTopic = (requestedSubject || "").trim().slice(0, 150);
+  if (subjectTopic) {
+    revisionNotes += `\nREQUIRED SUBJECT LINE (set by the reviewer): "${subjectTopic}"\nThe email body MUST be written around this subject: its opening hook, framing and call to action should clearly reflect what this subject promises. Different subjects must produce visibly different emails, not one generic pitch. Return this exact subject text in the "subject" JSON field.\n`;
+  }
   if (customInstructions && customInstructions.trim()) {
     revisionNotes += `
 REVIEWER INSTRUCTIONS (follow these, but still obey every output rule below):
@@ -220,7 +225,7 @@ ${structureRule}
 ${signOff}
 9. Return ONLY valid raw JSON with no markdown code fences:
 {
-  "subject": "Mobile-ready subject line under 40 characters",
+  "subject": "${subjectTopic ? subjectTopic.replace(/"/g, '\'') : "Mobile-ready subject line under 40 characters"}",
   "body": "Exact email body text with sign-off"
 }
 `.trim();
