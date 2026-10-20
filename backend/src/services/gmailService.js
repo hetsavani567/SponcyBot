@@ -45,24 +45,52 @@ const getAuthUrl = (customRedirectUri) => {
 };
 
 // ─── Demo / Simulated Account Authorization ─────────────────────────────────
+let inMemoryDemoToken = {
+  email: process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club",
+  accessToken: "demo_token_default",
+  refreshToken: "demo_refresh_default",
+  expiryDate: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+  scope: SCOPES.join(" ")
+};
+
 const connectDemoAccount = async ({ email = "sponsorships@hackathon.club" } = {}) => {
   const senderEmail = email || process.env.GMAIL_SENDER_EMAIL || "sponsorships@hackathon.club";
-  const tokenDoc = await GmailToken.findOneAndUpdate(
-    { email: senderEmail },
-    {
-      email: senderEmail,
-      accessToken: `demo_token_${Date.now()}`,
-      refreshToken: `demo_refresh_${Date.now()}`,
-      expiryDate: new Date(Date.now() + 365 * 24 * 3600 * 1000),
-      scope: SCOPES.join(" ")
-    },
-    { upsert: true, new: true }
-  );
-  return tokenDoc;
+  const tokenData = {
+    email: senderEmail,
+    accessToken: `demo_token_${Date.now()}`,
+    refreshToken: `demo_refresh_${Date.now()}`,
+    expiryDate: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+    scope: SCOPES.join(" ")
+  };
+
+  inMemoryDemoToken = tokenData;
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const tokenDoc = await GmailToken.findOneAndUpdate(
+        { email: senderEmail },
+        tokenData,
+        { upsert: true, new: true }
+      );
+      return tokenDoc || tokenData;
+    } catch (err) {
+      console.warn("[GmailService] MongoDB token save warning:", err.message);
+      return tokenData;
+    }
+  }
+
+  return tokenData;
 };
 
 const disconnectAccount = async () => {
-  await GmailToken.deleteMany({});
+  inMemoryDemoToken = null;
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await GmailToken.deleteMany({});
+    } catch (err) {
+      console.warn("[GmailService] MongoDB disconnect warning:", err.message);
+    }
+  }
   return { success: true };
 };
 
@@ -95,7 +123,18 @@ const exchangeCodeForTokens = async (code, customRedirectUri) => {
 
 // ─── Load a Fresh Authenticated OAuth Client from DB ────────────────────────
 const getAuthenticatedClient = async () => {
-  let tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
+  let tokenDoc = null;
+  if (mongoose.connection.readyState === 1) {
+    try {
+      tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
+    } catch (err) {
+      console.warn("[GmailService] getAuthenticatedClient find token warning:", err.message);
+    }
+  }
+
+  if (!tokenDoc) {
+    tokenDoc = inMemoryDemoToken;
+  }
 
   // If no token exists and no Google OAuth credentials are set, auto-connect demo
   if (!tokenDoc) {
@@ -143,7 +182,19 @@ const getAuthenticatedClient = async () => {
 // ─── Check Auth Status ───────────────────────────────────────────────────────
 const getAuthStatus = async () => {
   const hasGoogleCredentials = Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET);
-  if (mongoose.connection.readyState !== 1) {
+  let tokenDoc = null;
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
+    } catch (err) {
+      console.warn("[GmailService] MongoDB find token warning:", err.message);
+    }
+  }
+
+  const effectiveToken = tokenDoc || inMemoryDemoToken;
+
+  if (!effectiveToken) {
     return {
       authorized: false,
       email: null,
@@ -152,24 +203,15 @@ const getAuthStatus = async () => {
       expiryDate: null
     };
   }
-  const tokenDoc = await GmailToken.findOne().sort({ updatedAt: -1 });
-  if (!tokenDoc) {
-    return {
-      authorized: false,
-      email: null,
-      isDemo: false,
-      hasGoogleCredentials,
-      expiryDate: null
-    };
-  }
-  const isDemo = Boolean(tokenDoc.accessToken && tokenDoc.accessToken.startsWith("demo_"));
+
+  const isDemo = Boolean(effectiveToken.accessToken && effectiveToken.accessToken.startsWith("demo_"));
   return {
     authorized: true,
-    email: tokenDoc.email,
+    email: effectiveToken.email,
     isDemo,
     hasGoogleCredentials,
-    expiryDate: tokenDoc.expiryDate,
-    updatedAt: tokenDoc.updatedAt
+    expiryDate: effectiveToken.expiryDate,
+    updatedAt: effectiveToken.updatedAt || new Date()
   };
 };
 
