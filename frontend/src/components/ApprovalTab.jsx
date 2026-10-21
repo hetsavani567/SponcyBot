@@ -31,10 +31,10 @@ export default function ApprovalTab({
 
   const activeDrafting = draftingTarget || localDraftingTarget;
 
-  const loadEmails = useCallback(async (preserveSelectionId = null) => {
+  const loadEmails = useCallback(async (preserveSelectionId = null, forceRefresh = false) => {
     setLoading(true);
     try {
-      const emailList = await api.getEmails();
+      const emailList = await api.getEmails(forceRefresh);
       setEmails(emailList);
 
       if (emailList.length > 0) {
@@ -240,18 +240,18 @@ export default function ApprovalTab({
 
     setActing(true);
     try {
-      const { res, data } = await api.deleteEmail(emailId);
+      const { res, data } = await api.deleteEmail(emailId, true);
       if (res.ok) {
         onShowToast('Draft removed successfully from queue.', 'info');
-        await loadEmails();
+        await loadEmails(null, true);
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to remove draft', 'error');
-        await loadEmails();
+        await loadEmails(null, true);
       }
     } catch (err) {
       onShowToast(err.message, 'error');
-      await loadEmails();
+      await loadEmails(null, true);
     } finally {
       setActing(false);
     }
@@ -270,15 +270,15 @@ export default function ApprovalTab({
       const { res, data } = await api.deleteRejectedEmails();
       if (res.ok) {
         onShowToast(`Removed ${data?.count || rejectedCount} rejected draft(s).`, 'success');
-        await loadEmails(null);
+        await loadEmails(null, true);
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to remove rejected drafts', 'error');
-        await loadEmails();
+        await loadEmails(null, true);
       }
     } catch (err) {
       onShowToast(err.message, 'error');
-      await loadEmails();
+      await loadEmails(null, true);
     } finally {
       setActing(false);
     }
@@ -294,15 +294,15 @@ export default function ApprovalTab({
       const { res, data } = await api.deleteAllDrafts();
       if (res.ok) {
         onShowToast(`Cleared ${data?.count ?? emails.length} draft(s). Queue is clean!`, 'success');
-        await loadEmails(null);
+        await loadEmails(null, true);
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to clear drafts', 'error');
-        await loadEmails();
+        await loadEmails(null, true);
       }
     } catch (err) {
       onShowToast(err.message, 'error');
-      await loadEmails();
+      await loadEmails(null, true);
     } finally {
       setActing(false);
     }

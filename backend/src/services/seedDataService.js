@@ -270,8 +270,8 @@ const defaultEmails = [
     type: "initial",
     subject: "Partnering with HackFest 2026: GitHub Developer Tooling Track",
     body: "Hi GitHub DevRel Team,\n\nWe are organizing HackFest 2026 bringing together 500+ builders.\n\nWe would love to feature a dedicated GitHub Copilot workshop track and student developer pack activation.\n\nCould we connect this week for a brief 10-minute sync?\n\nBest regards,\nHet Savani",
-    status: "SENT",
-    version: 2,
+    status: "PENDING_APPROVAL",
+    version: 1,
     askType: "infra",
     createdAt: new Date(Date.now() - 3600000 * 24),
     updatedAt: new Date(Date.now() - 3600000 * 24)
@@ -283,8 +283,8 @@ const defaultEmails = [
     type: "initial",
     subject: "Supabase Database Track & Pro Credits Partnership - HackFest 2026",
     body: "Hi Supabase Partnerships Lead,\n\nWe would love to feature Supabase as our Official Database Partner for HackFest 2026, empowering 500+ builders to build full-stack apps in 36 hours.\n\nWe would love to provide participants with Supabase credits and host a prize bounty for best backend architecture.\n\nWould you be open to a quick 10-minute sync?\n\nBest regards,\nPartnerships Team",
-    status: "SENT",
-    version: 2,
+    status: "PENDING_APPROVAL",
+    version: 1,
     askType: "infra",
     createdAt: new Date(),
     updatedAt: new Date()
@@ -297,9 +297,9 @@ const defaultStats = {
     total: defaultCompanies.length
   },
   emails: {
-    pendingApproval: 0,
-    totalSent: 2,
-    approvalsGiven: 2,
+    pendingApproval: 2,
+    totalSent: 0,
+    approvalsGiven: 0,
     rejectionsGiven: 0
   },
   gmail: {
@@ -602,6 +602,94 @@ const autoSeedDatabase = async () => {
   }
 };
 
+/**
+ * In-Memory Mutation Helpers
+ * Ensure that when deletions, additions, or status changes occur in offline/demo mode,
+ * the in-memory array reflects them immediately instead of reloading stale/old data.
+ */
+function removeInMemoryEmail(id) {
+  if (!id) return null;
+  const targetId = String(id);
+  const idx = defaultEmails.findIndex(e => String(e._id || e.id) === targetId);
+  if (idx !== -1) {
+    const deleted = defaultEmails.splice(idx, 1)[0];
+    return deleted;
+  }
+  return null;
+}
+
+function removeInMemoryOutreach(id) {
+  if (!id) return null;
+  const targetId = String(id);
+  const idx = defaultOutreaches.findIndex(o => String(o._id || o.id) === targetId);
+  if (idx !== -1) {
+    const deleted = defaultOutreaches.splice(idx, 1)[0];
+    return deleted;
+  }
+  return null;
+}
+
+function clearInMemoryEmails() {
+  const initialLen = defaultEmails.length;
+  defaultEmails.length = 0;
+  return initialLen;
+}
+
+function removeInMemoryRejectedEmails() {
+  const beforeLen = defaultEmails.length;
+  for (let i = defaultEmails.length - 1; i >= 0; i--) {
+    const e = defaultEmails[i];
+    if (e.isRejected || e.status === "REJECTED" || (e.status === "DRAFT" && e.rejectionReason)) {
+      defaultEmails.splice(i, 1);
+    }
+  }
+  return beforeLen - defaultEmails.length;
+}
+
+function addInMemoryEmail(email) {
+  if (!email) return;
+  const idStr = String(email._id || email.id);
+  const idx = defaultEmails.findIndex(e => String(e._id || e.id) === idStr);
+  if (idx !== -1) {
+    defaultEmails[idx] = email;
+  } else {
+    defaultEmails.unshift(email);
+  }
+}
+
+function addInMemoryOutreach(outreach) {
+  if (!outreach) return;
+  const idStr = String(outreach._id || outreach.id);
+  const idx = defaultOutreaches.findIndex(o => String(o._id || o.id) === idStr);
+  if (idx !== -1) {
+    defaultOutreaches[idx] = outreach;
+  } else {
+    defaultOutreaches.unshift(outreach);
+  }
+}
+
+function updateInMemoryOutreach(id, update) {
+  if (!id || !update) return null;
+  const idStr = String(id);
+  const item = defaultOutreaches.find(o => String(o._id || o.id) === idStr);
+  if (item) {
+    Object.assign(item, update);
+    return item;
+  }
+  return null;
+}
+
+function updateInMemoryEmail(id, update) {
+  if (!id || !update) return null;
+  const idStr = String(id);
+  const item = defaultEmails.find(e => String(e._id || e.id) === idStr);
+  if (item) {
+    Object.assign(item, update);
+    return item;
+  }
+  return null;
+}
+
 module.exports = {
   defaultCompanies,
   defaultTeamMembers,
@@ -609,5 +697,13 @@ module.exports = {
   defaultEmails,
   defaultThreads,
   defaultStats,
-  autoSeedDatabase
+  autoSeedDatabase,
+  removeInMemoryEmail,
+  removeInMemoryOutreach,
+  clearInMemoryEmails,
+  removeInMemoryRejectedEmails,
+  addInMemoryEmail,
+  addInMemoryOutreach,
+  updateInMemoryOutreach,
+  updateInMemoryEmail
 };

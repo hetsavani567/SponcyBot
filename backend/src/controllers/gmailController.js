@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const {
   getEffectiveRedirectUri,
   getAuthUrl,
@@ -1203,8 +1204,23 @@ const confirmReplyHandler = async (req, res) => {
     const { GmailThread } = require("../models/gmailThread");
     const { Outreach } = require("../models/outreach");
     const { updateOutreachStatus } = require("../services/outreachService");
+    const { defaultOutreaches, defaultThreads } = require("../services/seedDataService");
 
-    // 1. Find Outreach record
+    // 1. Compute target status based on normalized reply outcome
+    let targetStatus = "WAITING FOR REPLY";
+    if (normalizedLabel === "INTERESTED") {
+      targetStatus = meetingLink || meetingScheduledAt ? "MEETING" : "INTERESTED";
+    } else if (normalizedLabel === "DECLINED") {
+      targetStatus = "DECLINED";
+    } else if (normalizedLabel === "OUT OF OFFICE") {
+      targetStatus = "OUT OF OFFICE";
+    } else if (normalizedLabel === "NO_REPLY") {
+      targetStatus = "NO REPLY";
+    } else if (normalizedLabel === "WAITING FOR REPLY" || normalizedLabel === "OTHER") {
+      targetStatus = "WAITING FOR REPLY";
+    }
+
+    // 2. Find Outreach record in MongoDB if connected
     let outreach = null;
     if (mongoose.connection.readyState === 1) {
       if (outreachId && mongoose.Types.ObjectId.isValid(outreachId)) {
@@ -1218,21 +1234,8 @@ const confirmReplyHandler = async (req, res) => {
       }
     }
 
-    // 2. Update Outreach status based on normalized reply outcome
-    if (outreach) {
-      let targetStatus = "WAITING FOR REPLY";
-      if (normalizedLabel === "INTERESTED") {
-        targetStatus = meetingLink || meetingScheduledAt ? "MEETING" : "INTERESTED";
-      } else if (normalizedLabel === "DECLINED") {
-        targetStatus = "DECLINED";
-      } else if (normalizedLabel === "OUT OF OFFICE") {
-        targetStatus = "OUT OF OFFICE";
-      } else if (normalizedLabel === "NO_REPLY") {
-        targetStatus = "NO REPLY";
-      } else if (normalizedLabel === "WAITING FOR REPLY" || normalizedLabel === "OTHER") {
-        targetStatus = "WAITING FOR REPLY";
-      }
-
+    // 3. Update MongoDB Outreach if found
+    if (outreach && typeof outreach.save === "function") {
       await updateOutreachStatus(outreach, targetStatus, {
         threadId: threadId || outreach.threadId,
         reason: notes || `Sponsor reply recorded: ${normalizedLabel}`,
@@ -1246,7 +1249,28 @@ const confirmReplyHandler = async (req, res) => {
       });
     }
 
-    // 3. Update or Upsert GmailThread record & append sponsor reply message
+    // 4. Always synchronize with in-memory defaultOutreaches (ensures reliable demo/offline operation)
+    const targetOutreachId = String(outreachId || (outreach?._id || outreach?.id) || "");
+    const memOutreach = defaultOutreaches.find(o =>
+      (targetOutreachId && String(o._id || o.id) === targetOutreachId) ||
+      (threadId && o.threadId === threadId) ||
+      (req.body?.companyId && String(o.companyId?._id || o.companyId?.id || o.companyId) === String(req.body.companyId))
+    );
+    if (memOutreach) {
+      memOutreach.status = targetStatus;
+      memOutreach.lastReplyAt = new Date();
+      memOutreach.notes = notes || `Sponsor reply recorded: ${normalizedLabel}`;
+      if (meetingLink) memOutreach.meetingLink = meetingLink;
+      if (meetingScheduledAt) memOutreach.meetingScheduledAt = meetingScheduledAt;
+      if (["DECLINED", "CLOSED"].includes(targetStatus)) {
+        memOutreach.nextFollowUpAt = null;
+      }
+    }
+    if (!outreach && memOutreach) {
+      outreach = memOutreach;
+    }
+
+    // 5. Update or Upsert GmailThread record & append sponsor reply message
     const resolvedThreadId = threadId || outreach?.threadId || `thread_${Date.now()}`;
     let threadDoc = null;
     if (mongoose.connection.readyState === 1) {
@@ -1257,7 +1281,7 @@ const confirmReplyHandler = async (req, res) => {
           confirmedBy,
           confirmedAt: new Date()
         };
-        if (outreach?.companyId) updatePayload.companyId = outreach.companyId;
+        if (outreach?.companyId) updatePayload.companyId = outreach.companyId._id || outreach.companyId;
         if (outreach?._id) updatePayload.outreachId = outreach._id;
 
         threadDoc = await GmailThread.findOneAndUpdate(
@@ -1290,18 +1314,72 @@ const confirmReplyHandler = async (req, res) => {
       } catch (_) {}
     }
 
+    // Always synchronize with in-memory defaultThreads
+    let memThread = defaultThreads.find(t => t.threadId === resolvedThreadId || (threadId && t.threadId === threadId));
+    if (memThread) {
+      memThread.confirmedLabel = normalizedLabel;
+      memThread.confirmedBy = confirmedBy;
+      memThread.confirmedAt = new Date();
+      if (notes && notes.trim()) {
+        const replySnippet = notes.slice(0, 120);
+        memThread.snippet = replySnippet;
+        memThread.lastMessageAt = new Date();
+        memThread.messages = memThread.messages || [];
+        memThread.messages.push({
+          messageId: `msg_sponsor_reply_${Date.now()}`,
+          from: "Sponsor Representative <sponsor@company.com>",
+          to: "Het Savani <sponsorships@hackathon.club>",
+          date: new Date(),
+          snippet: replySnippet,
+          body: notes.trim(),
+          isFromSponsor: true
+        });
+      }
+      if (!threadDoc) {
+        threadDoc = memThread;
+      }
+    } else {
+      const replySnippet = (notes || `Sponsor reply recorded as ${normalizedLabel}`).slice(0, 120);
+      const newMemThread = {
+        threadId: resolvedThreadId,
+        subject: outreach?.companyId?.name ? `Partnering with HackFest 2026: ${outreach.companyId.name} Sponsorship` : "Outreach Discussion",
+        snippet: replySnippet,
+        confirmedLabel: normalizedLabel,
+        confirmedBy,
+        confirmedAt: new Date(),
+        lastMessageAt: new Date(),
+        companyId: outreach?.companyId || null,
+        outreachId: outreach?._id || outreach?.id || null,
+        messages: [
+          {
+            messageId: `msg_sponsor_reply_${Date.now()}`,
+            from: "Sponsor Representative <sponsor@company.com>",
+            to: "Het Savani <sponsorships@hackathon.club>",
+            date: new Date(),
+            snippet: replySnippet,
+            body: (notes || "").trim() || `Sponsor reply recorded as ${normalizedLabel}`,
+            isFromSponsor: true
+          }
+        ]
+      };
+      defaultThreads.unshift(newMemThread);
+      if (!threadDoc) {
+        threadDoc = newMemThread;
+      }
+    }
+
     serverCache.invalidateTag("threads");
     serverCache.invalidateTag("outreach");
     serverCache.invalidateTag("stats");
 
     return res.status(200).json({
       success: true,
-      message: `Reply outcome '${normalizedLabel}' confirmed successfully. Outreach status updated to ${outreach?.status || normalizedLabel}.`,
+      message: `Reply outcome '${normalizedLabel}' confirmed successfully. Outreach status updated to ${outreach?.status || targetStatus}.`,
       data: {
         thread: threadDoc,
         outreach: outreach
           ? {
-              id: outreach._id,
+              id: outreach._id || outreach.id,
               status: outreach.status,
               followUpCount: outreach.followUpCount,
               closedReason: outreach.closedReason,
@@ -1362,15 +1440,18 @@ const getSystemStatsInternal = async () => {
         console.warn("[GmailController] DB stats calculation warning:", err.message);
       }
     } else {
+      const { defaultEmails, defaultCompanies, defaultThreads } = require("../services/seedDataService");
+      totalCompanies = defaultCompanies ? defaultCompanies.length : 0;
+      pendingApprovals = defaultEmails ? defaultEmails.filter(e => e.status === "PENDING_APPROVAL").length : 0;
+      totalEmailsSent = defaultEmails ? defaultEmails.filter(e => e.status === "SENT").length : 0;
+      totalThreads = defaultThreads ? defaultThreads.length : 0;
       outreachMetrics = await getStats();
     }
 
-    // Cloud deployment resilience: if database has not yet been seeded or cold-starts with 0,
-    // seamlessly provide the appropriate baseline stats so dashboard metrics are never all zeroes
-    const effectiveTotalCompanies = totalCompanies > 0 ? totalCompanies : defaultStats.sponsors.total;
-    const effectivePendingApprovals = (pendingApprovals > 0 || totalEmailsSent > 0) ? pendingApprovals : defaultStats.emails.pendingApproval;
-    const effectiveTotalEmailsSent = (totalEmailsSent > 0 || pendingApprovals > 0) ? totalEmailsSent : defaultStats.emails.totalSent;
-    const effectiveOutreach = (outreachMetrics && outreachMetrics.totalOutreach > 0) ? outreachMetrics : defaultStats.outreach;
+    const effectiveTotalCompanies = totalCompanies !== undefined ? totalCompanies : defaultStats.sponsors.total;
+    const effectivePendingApprovals = pendingApprovals !== undefined ? pendingApprovals : 0;
+    const effectiveTotalEmailsSent = totalEmailsSent !== undefined ? totalEmailsSent : 0;
+    const effectiveOutreach = outreachMetrics || defaultStats.outreach;
 
     return {
       sponsors: {
@@ -1379,11 +1460,11 @@ const getSystemStatsInternal = async () => {
       emails: {
         pendingApproval: effectivePendingApprovals,
         totalSent: effectiveTotalEmailsSent,
-        approvalsGiven: totalApproved || defaultStats.emails.approvalsGiven,
-        rejectionsGiven: totalRejected || defaultStats.emails.rejectionsGiven
+        approvalsGiven: totalApproved || 0,
+        rejectionsGiven: totalRejected || 0
       },
       gmail: {
-        trackedThreads: totalThreads > 0 ? totalThreads : defaultStats.gmail.trackedThreads
+        trackedThreads: totalThreads !== undefined ? totalThreads : 0
       },
       outreach: effectiveOutreach
     };

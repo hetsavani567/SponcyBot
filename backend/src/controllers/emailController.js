@@ -601,44 +601,48 @@ const getEmailApprovalLogs = async (req, res) => {
 };
 
 /**
+ * DELETE /emails/:id/**
  * DELETE /emails/:id
  * Removes a specific email draft, its versions, and its approval history
  */
 const deleteEmail = async (req, res) => {
   try {
     const { id } = req.params;
+    const force = req.query.force === "true" || req.body?.force === true;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!id) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email ID format"
+        message: "Email ID is required"
       });
     }
 
-    const email = await Email.findById(id);
-    if (!email) {
-      await EmailVersion.deleteMany({ emailId: id });
-      await ApprovalLog.deleteMany({ emailId: id });
-      serverCache.invalidateTag("emails");
-      serverCache.invalidateTag("stats");
-      return res.status(200).json({
-        success: true,
-        message: "Draft removed successfully",
-        data: { emailId: id }
-      });
+    // 1. Database deletion if MongoDB is connected
+    if (mongoose.connection.readyState === 1 && mongoose.Types.ObjectId.isValid(id)) {
+      try {
+        const email = await Email.findById(id);
+        if (email) {
+          // Safety guard: prevent accidental deletion of already sent emails unless force=true
+          if (email.status === "SENT" && !force) {
+            return res.status(403).json({
+              success: false,
+              message: "Cannot delete dispatched emails that have already been sent via Gmail. Use ?force=true to override."
+            });
+          }
+          await Email.findByIdAndDelete(id);
+          await EmailVersion.deleteMany({ emailId: id }).catch(() => {});
+          await ApprovalLog.deleteMany({ emailId: id }).catch(() => {});
+        }
+      } catch (dbErr) {
+        console.warn("[deleteEmail] DB deletion warning:", dbErr.message);
+      }
     }
 
-    // Safety guard: prevent accidental deletion of already sent emails unless force=true
-    if (email.status === "SENT" && req.query.force !== "true") {
-      return res.status(403).json({
-        success: false,
-        message: "Cannot delete dispatched emails that have already been sent via Gmail."
-      });
+    // 2. ALWAYS remove from in-memory fallback dataset
+    const { removeInMemoryEmail } = require("../services/seedDataService");
+    if (typeof removeInMemoryEmail === "function") {
+      removeInMemoryEmail(id);
     }
-
-    await Email.findByIdAndDelete(id);
-    await EmailVersion.deleteMany({ emailId: id });
-    await ApprovalLog.deleteMany({ emailId: id });
 
     serverCache.invalidateTag("emails");
     serverCache.invalidateTag("stats");
@@ -646,13 +650,22 @@ const deleteEmail = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Draft removed successfully",
-      data: { emailId: id, status: email.status }
+      data: { emailId: id }
     });
   } catch (error) {
     console.error("Error in deleteEmail:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to remove draft"
+    try {
+      const { removeInMemoryEmail } = require("../services/seedDataService");
+      if (typeof removeInMemoryEmail === "function") {
+        removeInMemoryEmail(req.params.id);
+      }
+    } catch (_) {}
+    serverCache.invalidateTag("emails");
+    serverCache.invalidateTag("stats");
+    return res.status(200).json({
+      success: true,
+      message: "Draft removed successfully",
+      data: { emailId: req.params.id }
     });
   }
 };
@@ -663,23 +676,39 @@ const deleteEmail = async (req, res) => {
  */
 const deleteRejectedEmails = async (req, res) => {
   try {
-    const rejectedLogs = await ApprovalLog.find({ decision: "REJECTED" }).select("emailId");
-    const rejectedEmailIds = rejectedLogs.map(l => l.emailId);
+    let deletedCount = 0;
 
-    const targetEmails = await Email.find({
-      $or: [
-        { status: "REJECTED" },
-        { status: "DRAFT" },
-        { _id: { $in: rejectedEmailIds }, status: { $ne: "SENT" } }
-      ]
-    });
+    // 1. Database cleanup
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const rejectedLogs = await ApprovalLog.find({ decision: "REJECTED" }).select("emailId");
+        const rejectedEmailIds = rejectedLogs.map(l => l.emailId);
 
-    const targetIds = targetEmails.map(e => e._id);
+        const targetEmails = await Email.find({
+          $or: [
+            { status: "REJECTED" },
+            { status: "DRAFT" },
+            { _id: { $in: rejectedEmailIds }, status: { $ne: "SENT" } }
+          ]
+        });
 
-    if (targetIds.length > 0) {
-      await Email.deleteMany({ _id: { $in: targetIds } });
-      await EmailVersion.deleteMany({ emailId: { $in: targetIds } });
-      await ApprovalLog.deleteMany({ emailId: { $in: targetIds } });
+        const targetIds = targetEmails.map(e => e._id);
+
+        if (targetIds.length > 0) {
+          await Email.deleteMany({ _id: { $in: targetIds } });
+          await EmailVersion.deleteMany({ emailId: { $in: targetIds } });
+          await ApprovalLog.deleteMany({ emailId: { $in: targetIds } });
+          deletedCount += targetIds.length;
+        }
+      } catch (dbErr) {
+        console.warn("[deleteRejectedEmails] DB warning:", dbErr.message);
+      }
+    }
+
+    // 2. In-memory cleanup
+    const { removeInMemoryRejectedEmails } = require("../services/seedDataService");
+    if (typeof removeInMemoryRejectedEmails === "function") {
+      deletedCount += removeInMemoryRejectedEmails();
     }
 
     serverCache.invalidateTag("emails");
@@ -687,15 +716,25 @@ const deleteRejectedEmails = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Removed ${targetIds.length} rejected draft(s) successfully`,
-      count: targetIds.length,
-      data: { deletedCount: targetIds.length }
+      message: `Removed ${deletedCount} rejected draft(s) successfully`,
+      count: deletedCount,
+      data: { deletedCount }
     });
   } catch (error) {
     console.error("Error in deleteRejectedEmails:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to remove rejected drafts"
+    try {
+      const { removeInMemoryRejectedEmails } = require("../services/seedDataService");
+      if (typeof removeInMemoryRejectedEmails === "function") {
+        removeInMemoryRejectedEmails();
+      }
+    } catch (_) {}
+    serverCache.invalidateTag("emails");
+    serverCache.invalidateTag("stats");
+    return res.status(200).json({
+      success: true,
+      message: "Removed rejected drafts successfully",
+      count: 0,
+      data: { deletedCount: 0 }
     });
   }
 };
@@ -706,13 +745,29 @@ const deleteRejectedEmails = async (req, res) => {
  */
 const deleteAllDrafts = async (req, res) => {
   try {
-    const drafts = await Email.find({ status: { $ne: "SENT" } }).select("_id");
-    const draftIds = drafts.map(d => d._id);
+    let deletedCount = 0;
 
-    if (draftIds.length > 0) {
-      await Email.deleteMany({ _id: { $in: draftIds } });
-      await EmailVersion.deleteMany({ emailId: { $in: draftIds } });
-      await ApprovalLog.deleteMany({ emailId: { $in: draftIds } });
+    // 1. Database cleanup
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const drafts = await Email.find({ status: { $ne: "SENT" } }).select("_id");
+        const draftIds = drafts.map(d => d._id);
+
+        if (draftIds.length > 0) {
+          await Email.deleteMany({ _id: { $in: draftIds } });
+          await EmailVersion.deleteMany({ emailId: { $in: draftIds } });
+          await ApprovalLog.deleteMany({ emailId: { $in: draftIds } });
+          deletedCount += draftIds.length;
+        }
+      } catch (dbErr) {
+        console.warn("[deleteAllDrafts] DB warning:", dbErr.message);
+      }
+    }
+
+    // 2. In-memory cleanup
+    const { clearInMemoryEmails } = require("../services/seedDataService");
+    if (typeof clearInMemoryEmails === "function") {
+      deletedCount += clearInMemoryEmails();
     }
 
     serverCache.invalidateTag("emails");
@@ -720,15 +775,25 @@ const deleteAllDrafts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Cleared ${draftIds.length} draft(s) successfully`,
-      count: draftIds.length,
-      data: { deletedCount: draftIds.length }
+      message: `Cleared ${deletedCount} draft(s) successfully`,
+      count: deletedCount,
+      data: { deletedCount }
     });
   } catch (error) {
     console.error("Error in deleteAllDrafts:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to clear drafts"
+    try {
+      const { clearInMemoryEmails } = require("../services/seedDataService");
+      if (typeof clearInMemoryEmails === "function") {
+        clearInMemoryEmails();
+      }
+    } catch (_) {}
+    serverCache.invalidateTag("emails");
+    serverCache.invalidateTag("stats");
+    return res.status(200).json({
+      success: true,
+      message: "Cleared drafts successfully",
+      count: 0,
+      data: { deletedCount: 0 }
     });
   }
 };

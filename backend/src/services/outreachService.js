@@ -212,46 +212,28 @@ const updateOutreachStatus = async (outreach, newStatus, { reason = "", meetingL
 };
 
 const getStats = async () => {
+  let allOutreaches = [];
+
   if (mongoose.connection.readyState !== 1) {
     try {
-      const { defaultStats } = require("./seedDataService");
-      return defaultStats.outreach;
+      const { defaultOutreaches } = require("./seedDataService");
+      allOutreaches = defaultOutreaches || [];
     } catch (_) {
-      return {
-        totalOutreach: 5,
-        statusCounts: {},
-        pendingFollowUpsDue: 1,
-        totalFollowUpsSent: 2,
-        repliesReceived: 1,
-        responseRatePercent: 40.0,
-        conversionsCount: 1,
-        conversionRatePercent: 20.0,
-        fundsSecuredINR: 150000
-      };
+      allOutreaches = [];
     }
-  }
-
-  const allOutreaches = await Outreach.find()
-    .select("status followUpCount lastReplyAt nextFollowUpAt companyId")
-    .populate("companyId", "recommendedTier recommendedAsk")
-    .lean();
-
-  if (allOutreaches.length === 0) {
+  } else {
     try {
-      const { defaultStats } = require("./seedDataService");
-      return defaultStats.outreach;
+      allOutreaches = await Outreach.find()
+        .select("status followUpCount lastReplyAt nextFollowUpAt companyId")
+        .populate("companyId", "recommendedTier recommendedAsk")
+        .lean();
     } catch (_) {
-      return {
-        totalOutreach: 5,
-        statusCounts: {},
-        pendingFollowUpsDue: 1,
-        totalFollowUpsSent: 2,
-        repliesReceived: 1,
-        responseRatePercent: 40.0,
-        conversionsCount: 1,
-        conversionRatePercent: 20.0,
-        fundsSecuredINR: 150000
-      };
+      try {
+        const { defaultOutreaches } = require("./seedDataService");
+        allOutreaches = defaultOutreaches || [];
+      } catch {
+        allOutreaches = [];
+      }
     }
   }
 

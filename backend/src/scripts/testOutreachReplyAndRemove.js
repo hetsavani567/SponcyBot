@@ -82,6 +82,74 @@ async function runTests() {
   assert.strictEqual(serverCache.get("outreach_cache_key"), null, "Must invalidate cached outreach records");
   console.log("  ✓ Cache invalidation verified for outreach mutations");
 
+  // Test 6: confirmReplyHandler end-to-end (Approved/Interested, Declined, Out of Office)
+  console.log("\nTest 6: confirmReplyHandler updates outreach CRM status and thread messages");
+  const { confirmReplyHandler } = require("../controllers/gmailController");
+  const { defaultOutreaches, defaultThreads } = require("../services/seedDataService");
+
+  const createMockReqRes = (body = {}) => {
+    let statusCode = 200;
+    let jsonBody = null;
+    const req = { body };
+    const res = {
+      status(c) { statusCode = c; return this; },
+      json(b) { jsonBody = b; return this; },
+      setHeader() {}
+    };
+    return { req, res, getResult: () => ({ statusCode, jsonBody }) };
+  };
+
+  // 6a: Confirm reply as INTERESTED (Approved)
+  const targetTestOutreach = defaultOutreaches[0];
+  const targetIdStr = String(targetTestOutreach._id || targetTestOutreach.id);
+  const testThreadId = targetTestOutreach.threadId || "gmail_thread_github_101";
+
+  const confirmAttempt = createMockReqRes({
+    outreachId: targetIdStr,
+    threadId: testThreadId,
+    label: "INTERESTED",
+    confirmedBy: "Test Director",
+    notes: "We'd love to sponsor the hackathon!"
+  });
+
+  await confirmReplyHandler(confirmAttempt.req, confirmAttempt.res);
+  const confirmResult = confirmAttempt.getResult();
+  assert.strictEqual(confirmResult.statusCode, 200, "confirmReplyHandler must return 200");
+  assert.strictEqual(confirmResult.jsonBody.success, true);
+  assert.strictEqual(confirmResult.jsonBody.data.outreach.status, "INTERESTED");
+  assert.strictEqual(targetTestOutreach.status, "INTERESTED", "defaultOutreaches record must update to INTERESTED");
+
+  // Verify message appended to thread
+  const threadMatch = defaultThreads.find(t => t.threadId === testThreadId);
+  assert(threadMatch, "Thread must exist in defaultThreads");
+  assert(threadMatch.messages.some(m => m.body.includes("We'd love to sponsor the hackathon!")), "Thread must include simulated sponsor message");
+  console.log("  ✓ confirmReplyHandler correctly transitions status to INTERESTED and appends message to thread");
+
+  // 6b: Confirm reply as DECLINED (Denied)
+  const declineAttempt = createMockReqRes({
+    outreachId: targetIdStr,
+    threadId: testThreadId,
+    label: "DECLINED",
+    confirmedBy: "Test Director",
+    notes: "Budget fully committed."
+  });
+  await confirmReplyHandler(declineAttempt.req, declineAttempt.res);
+  const declineResult = declineAttempt.getResult();
+  assert.strictEqual(declineResult.statusCode, 200);
+  assert.strictEqual(declineResult.jsonBody.data.outreach.status, "DECLINED");
+  assert.strictEqual(targetTestOutreach.status, "DECLINED");
+  assert.strictEqual(targetTestOutreach.nextFollowUpAt, null, "Declined outreach must have null nextFollowUpAt");
+  console.log("  ✓ confirmReplyHandler correctly transitions status to DECLINED and clears follow-up schedule");
+
+  // Test 7: Verify OutreachTab.jsx has the restored Reply button
+  console.log("\nTest 7: Verify OutreachTab.jsx has restored Reply button");
+  const fs = require("fs");
+  const path = require("path");
+  const outreachTabCode = fs.readFileSync(path.join(__dirname, "../../../frontend/src/components/OutreachTab.jsx"), "utf8");
+  assert(outreachTabCode.includes("onOpenSimulateReply"), "OutreachTab.jsx must invoke onOpenSimulateReply");
+  assert(outreachTabCode.includes("Reply</span>") || outreachTabCode.includes("Reply"), "OutreachTab.jsx must display Reply button");
+  console.log("  ✓ OutreachTab.jsx verified: Reply button successfully restored!");
+
   console.log("\n🎉 ALL OUTREACH REPLY, OUT-OF-OFFICE & REMOVE TESTS PASSED!\n");
 }
 
