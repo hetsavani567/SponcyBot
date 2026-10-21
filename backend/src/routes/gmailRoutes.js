@@ -9,6 +9,9 @@ const {
   getOAuthStatus,
   sendEmail,
   getThreadById,
+  getAllThreads,
+  sendThreadReply,
+  simulateThreadReply,
   getInboxMessages,
   classifyReplyHandler,
   confirmReplyHandler,
@@ -34,9 +37,18 @@ router.get("/oauth/status", getOAuthStatus);
 router.post("/send", sendGuard, sendEmail);
 
 // ── Phase 4: Thread Inspection, Reply Polling & Human Confirmation ──────────
+// Fetch all active conversation threads from database
+router.get("/threads", getAllThreads);
+
 // Fetch thread for one sponsor
 router.get("/thread/:threadId", getThreadById);
 router.get("/thread/:id", getThreadById);
+
+// Send outbound reply message into thread
+router.post("/thread/:threadId/reply", sendThreadReply);
+
+// Simulate inbound sponsor reply to test AI sentiment classification
+router.post("/thread/:threadId/simulate-reply", simulateThreadReply);
 
 // Fetch new messages / replies
 router.get("/messages", getInboxMessages);

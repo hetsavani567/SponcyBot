@@ -5,12 +5,12 @@ const serverCache = require("../services/cacheService");
 const { getAuthStatus } = require("../services/gmailService");
 const { verifyToken, findUserById } = require("../services/authService");
 const { rankCompaniesInternal } = require("../controllers/companyController");
-const { getSystemStatsInternal } = require("../controllers/gmailController");
+const { getSystemStatsInternal, getAllThreadsInternal } = require("../controllers/gmailController");
 
 /**
  * GET /api/bootstrap
  * Super-fast unified initial load endpoint.
- * Fetches dashboard stats, mailbox status, sponsor rankings, and session profile
+ * Fetches dashboard stats, mailbox status, sponsor rankings, session profile, and conversation threads
  * in a SINGLE round-trip to cut mobile/cloud RTT and eliminate waterfall delay.
  */
 router.get("/bootstrap", async (req, res) => {
@@ -37,11 +37,12 @@ router.get("/bootstrap", async (req, res) => {
       }
     };
 
-    // 2. Fetch stats, gmailStatus, sponsors, and user in parallel
-    const [stats, gmailStatus, sponsors, user] = await Promise.all([
+    // 2. Fetch stats, gmailStatus, sponsors, threads, and user in parallel
+    const [stats, gmailStatus, sponsors, threads, user] = await Promise.all([
       getSystemStatsInternal(),
       getAuthStatus().catch(() => ({ authorized: false })),
       rankCompaniesInternal(),
+      getAllThreadsInternal().catch(() => []),
       resolveUser()
     ]);
 
@@ -56,19 +57,21 @@ router.get("/bootstrap", async (req, res) => {
         stats,
         gmailStatus,
         sponsors,
+        threads,
         user
       }
     });
   } catch (error) {
     console.error("[Bootstrap] Error:", error.message);
     try {
-      const { defaultStats, defaultCompanies } = require("../services/seedDataService");
+      const { defaultStats, defaultCompanies, defaultThreads } = require("../services/seedDataService");
       return res.status(200).json({
         success: true,
         data: {
           stats: defaultStats,
           gmailStatus: { authorized: false },
           sponsors: defaultCompanies,
+          threads: defaultThreads,
           user: null
         }
       });
@@ -79,6 +82,7 @@ router.get("/bootstrap", async (req, res) => {
           stats: {},
           gmailStatus: { authorized: false },
           sponsors: [],
+          threads: [],
           user: null
         }
       });

@@ -11,8 +11,13 @@ async function createInitialEmail({
   subject,
   body,
   promptUsed = "",
-  status = "PENDING_APPROVAL"
+  status = "PENDING_APPROVAL",
+  customInstructions = "",
+  isCustomized = false,
+  eventName = "HackFest 2026",
+  eventDates = "November 14–16, 2026"
 }) {
+  const hasCustomReq = Boolean(isCustomized || (customInstructions && customInstructions.trim()));
   const email = new Email({
     companyId,
     type,
@@ -20,7 +25,11 @@ async function createInitialEmail({
     subject,
     body,
     status,
-    version: 1
+    version: 1,
+    customInstructions: customInstructions ? customInstructions.trim() : "",
+    isCustomized: hasCustomReq,
+    eventName: (eventName && eventName.trim()) || "HackFest 2026",
+    eventDates: (eventDates && eventDates.trim()) || "November 14–16, 2026"
   });
 
   await email.save();
@@ -33,7 +42,7 @@ async function createInitialEmail({
     type,
     source: "ai",
     promptUsed,
-    notes: "Initial AI generation"
+    notes: hasCustomReq ? `Initial AI draft (Requirement: ${customInstructions.slice(0, 40)})` : "Initial AI generation"
   });
 
   await emailVersion.save();
@@ -71,11 +80,26 @@ async function recordRegeneratedVersion({
   subject,
   body,
   promptUsed = "",
-  notes = ""
+  notes = "",
+  customInstructions = null,
+  eventName = null,
+  eventDates = null
 }) {
+  const updateFields = { subject, body };
+  if (customInstructions !== null && customInstructions !== undefined) {
+    updateFields.customInstructions = String(customInstructions).trim();
+    updateFields.isCustomized = Boolean(updateFields.customInstructions.length > 0);
+  }
+  if (eventName && String(eventName).trim()) {
+    updateFields.eventName = String(eventName).trim();
+  }
+  if (eventDates && String(eventDates).trim()) {
+    updateFields.eventDates = String(eventDates).trim();
+  }
+
   const email = await applyEditableUpdate(
     emailId,
-    { subject, body },
+    updateFields,
     { status: "PENDING_APPROVAL" }
   );
 

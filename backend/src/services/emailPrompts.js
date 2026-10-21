@@ -79,9 +79,9 @@ function buildEmailPrompt(company, options = {}) {
       "https://sponsybot.com/deck",
 
     eventName =
-      process.env.EVENT_NAME || "Sponsy Bot Hackathon 2026",
+      options.eventName || process.env.EVENT_NAME || "HackFest 2026",
     eventDates =
-      process.env.EVENT_DATES || "November 14–16, 2026 (36 hours)",
+      options.eventDates || process.env.EVENT_DATES || "November 14–16, 2026 (36 hours)",
     eventLocation =
       process.env.EVENT_LOCATION ||
       "ACM Student Center, SVNIT Campus & Global Virtual Stream",
@@ -268,14 +268,26 @@ The email body MUST be written around this subject: its opening hook, framing an
 `;
   }
 
-  if (customInstructions.trim()) {
+  const trimmedRequirement = (customInstructions || "").trim().slice(0, 800);
+  if (trimmedRequirement) {
     revisionNotes += `
-REVIEWER INSTRUCTIONS:
-${customInstructions.trim().slice(0, 500)}
+CRITICAL SPONSOR REQUIREMENT & GOALS (MANDATORY TO ADDRESS):
+"${trimmedRequirement}"
 
-Apply these instructions unless they conflict with factual accuracy,
-the selected ask type, privacy, or the output requirements.
+UNIQUENESS & TAILORING DIRECTIVES:
+1. The AI model MUST generate a visibly unique, high-conversion email built specifically around this sponsor requirement.
+2. Directly reference this requirement in the opening hook and feature it as a core pillar of the partnership proposal.
+3. Explain the reciprocal value: how fulfilling this requirement empowers our 500+ student hackathon builders while advancing ${brandName}'s strategic goals.
+4. Do NOT use generic canned template language. Avoid repetitive phrasing. Make this email uniquely compelling for this exact requirement.
 `;
+  }
+
+  if (options.tone === "developer") {
+    revisionNotes += `\nTONE DIRECTIVE: Technical, developer-first, and focused on API integration, tooling adoption, and student builders hacking with their product.\n`;
+  } else if (options.tone === "executive") {
+    revisionNotes += `\nTONE DIRECTIVE: Executive, strategic, and ROI-driven, emphasizing brand positioning, talent acquisition, and leadership alignment.\n`;
+  } else if (options.tone === "persuasive") {
+    revisionNotes += `\nTONE DIRECTIVE: Energetic, highly persuasive, concise, and focused on driving an introductory 15-minute sync.\n`;
   }
 
   const deliverablesText = profile.deliverables

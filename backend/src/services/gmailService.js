@@ -487,7 +487,7 @@ const classifyReplyWithAI = async (replyText, companyContext = "") => {
     try {
       const { GoogleGenAI } = require("@google/genai");
       const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
       const prompt = `
 You are SponcyBot's Reply Classifier for hackathon sponsorship outreach.

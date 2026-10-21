@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmailModal, onOpenAddSponsorModal }) {
+export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmailModal, onOpenAddSponsorModal, onOpenDemoModal }) {
   const sponsorsCount = stats?.sponsors?.total ?? 0;
   const pendingApprovals = stats?.emails?.pendingApproval ?? 0;
   const emailsSent = stats?.emails?.totalSent ?? 0;
@@ -168,6 +168,34 @@ export default function DashboardTab({ stats, onRefresh, onSwitchTab, onOpenGmai
             Track in CRM &rarr;
           </button>
         </div>
+      </div>
+
+      {/* 12-Step Autonomous Lifecycle Simulation Card */}
+      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border border-emerald-500/20 shadow-lg shadow-emerald-950/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center space-x-3.5">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-2xl shrink-0 shadow-sm">
+            ⚡
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <h3 className="text-sm font-bold text-white">12-Step Autonomous Sponsor Outreach Simulation</h3>
+              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Interactive Demo
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
+              Execute the complete end-to-end lifecycle: Company Intelligence ➔ 6-Factor Scoring ➔ Gemini AI Drafting ➔ Human Review ➔ Send Guard ➔ Gmail Dispatch ➔ AI Reply Classification ➔ Meeting Booking.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenDemoModal}
+          className="px-5 py-2.5 bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 hover:brightness-110 active:scale-95 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-emerald-500/25 flex items-center justify-center space-x-2 transition shrink-0"
+        >
+          <span className="text-sm">⚡</span>
+          <span className="tracking-tight text-xs font-bold uppercase">Run Demo Simulation</span>
+        </button>
       </div>
     </section>
   );

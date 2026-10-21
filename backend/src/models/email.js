@@ -41,6 +41,25 @@ const emailSchema = new mongoose.Schema(
       type: String,
       enum: ASK_TYPES,
       default: "money"
+    },
+    customInstructions: {
+      type: String,
+      default: "",
+      trim: true
+    },
+    isCustomized: {
+      type: Boolean,
+      default: false
+    },
+    eventName: {
+      type: String,
+      default: "HackFest 2026",
+      trim: true
+    },
+    eventDates: {
+      type: String,
+      default: "November 14–16, 2026",
+      trim: true
     }
   },
   {

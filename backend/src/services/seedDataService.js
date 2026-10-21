@@ -283,7 +283,7 @@ const defaultEmails = [
     type: "initial",
     subject: "Supabase Database Track & Pro Credits Partnership - HackFest 2026",
     body: "Hi Supabase Partnerships Lead,\n\nWe would love to feature Supabase as our Official Database Partner for HackFest 2026, empowering 500+ builders to build full-stack apps in 36 hours.\n\nWe would love to provide participants with Supabase credits and host a prize bounty for best backend architecture.\n\nWould you be open to a quick 10-minute sync?\n\nBest regards,\nPartnerships Team",
-    status: "PENDING_APPROVAL",
+    status: "SENT",
     version: 2,
     askType: "infra",
     createdAt: new Date(),
@@ -297,9 +297,9 @@ const defaultStats = {
     total: defaultCompanies.length
   },
   emails: {
-    pendingApproval: 1,
-    totalSent: 1,
-    approvalsGiven: 1,
+    pendingApproval: 0,
+    totalSent: 2,
+    approvalsGiven: 2,
     rejectionsGiven: 0
   },
   gmail: {
@@ -330,6 +330,163 @@ const defaultStats = {
   }
 };
 
+const defaultThreads = [
+  {
+    _id: "675000000000000000000001",
+    threadId: "gmail_thread_github_101",
+    companyId: defaultCompanies[0],
+    outreachId: defaultOutreaches[0],
+    emailId: defaultEmails[0],
+    subject: "Partnering with HackFest 2026: GitHub Developer Tooling Track",
+    snippet: "Hi GitHub DevRel Team, We are organizing HackFest 2026 bringing together 500+ builders...",
+    lastMessageAt: new Date(Date.now() - 3600000 * 20),
+    suggestedLabel: "PENDING_CLASSIFICATION",
+    classificationReason: "Initial proposal email dispatched. Awaiting sponsor response.",
+    confidence: "HIGH",
+    confirmedLabel: null,
+    messages: [
+      {
+        messageId: "msg_gh_001",
+        from: "Het Savani <het@hackathon.club>",
+        to: "DevRel Sponsorships <sponsorships@github.com>",
+        date: new Date(Date.now() - 3600000 * 20),
+        snippet: "Hi GitHub DevRel Team, We are organizing HackFest 2026 bringing together 500+ builders...",
+        body: "Hi GitHub DevRel Team,\n\nWe are organizing HackFest 2026 at ACM NIT Surat, bringing together 500+ top collegiate developers and open-source contributors.\n\nGiven GitHub's outstanding commitment to student developer ecosystems, we would love to feature GitHub as our premier Developer Tooling Partner with a dedicated GitHub Copilot workshop track and challenge bounty.\n\nCould we connect this week for a brief 10-minute sync to explore synergies?\n\nBest regards,\nHet Savani\nSponsorship Lead · HackFest 2026",
+        isFromSponsor: false
+      }
+    ]
+  },
+  {
+    _id: "675000000000000000000002",
+    threadId: "gmail_thread_redbull_103",
+    companyId: defaultCompanies[4],
+    outreachId: defaultOutreaches[2],
+    emailId: null,
+    subject: "Official Energy Drink Partner - HackFest 2026 (ACM NIT Surat)",
+    snippet: "Hey Het! We'd love to fuel 500+ builders with 500 cans of Red Bull and set up a midnight chill station...",
+    lastMessageAt: new Date(Date.now() - 3600000 * 6),
+    suggestedLabel: "INTERESTED",
+    classificationReason: "Sponsor confirmed commitment of 500 energy drink cans, midnight activation station, and requested a 15-minute logistics meeting.",
+    confidence: "HIGH",
+    confirmedLabel: "INTERESTED",
+    confirmedBy: "Het Savani",
+    confirmedAt: new Date(Date.now() - 3600000 * 4),
+    messages: [
+      {
+        messageId: "msg_rb_001",
+        from: "Het Savani <het@hackathon.club>",
+        to: "Student Brand Manager <campus@redbull.com>",
+        date: new Date(Date.now() - 3600000 * 30),
+        snippet: "Hi Red Bull Team, We'd love to partner for 36 hours of continuous hacking...",
+        body: "Hi Red Bull Team,\n\nWe are hosting HackFest 2026 at SVNIT Surat with 500+ student builders hacking for 36 continuous hours.\n\nWe would love to welcome Red Bull as our Official Energy Partner, fueling midnight coding sprints and setting up a dedicated chill station with Red Bull wings team support.\n\nWould you be open to collaborating on this?\n\nBest regards,\nHet Savani",
+        isFromSponsor: false
+      },
+      {
+        messageId: "msg_rb_002",
+        from: "Campus Relations Lead <campus@redbull.com>",
+        to: "Het Savani <het@hackathon.club>",
+        date: new Date(Date.now() - 3600000 * 6),
+        snippet: "Hey Het! We'd love to fuel 500+ builders with 500 cans of Red Bull...",
+        body: "Hey Het,\n\nThanks for reaching out! SVNIT hackathons always have incredible energy.\n\nWe would love to come on board as the Official Energy Partner. We can provide 500 cans of Red Bull for midnight refueling, deliver branded stage banners, and send our student wings team.\n\nLet's do a quick 15-minute call on Thursday at 3 PM to lock down campus entry and delivery logistics: https://meet.google.com/abc-defg-hij\n\nCheers,\nAlex Rivera\nField Marketing & Campus Brand Manager, Red Bull",
+        isFromSponsor: true
+      }
+    ]
+  },
+  {
+    _id: "675000000000000000000003",
+    threadId: "gmail_thread_supabase_102",
+    companyId: defaultCompanies[1],
+    outreachId: defaultOutreaches[1],
+    emailId: defaultEmails[1],
+    subject: "Supabase Database Track & Pro Credits Partnership - HackFest 2026",
+    snippet: "Checking in to see if you had a chance to review our proposal for the Supabase backend track...",
+    lastMessageAt: new Date(Date.now() - 3600000 * 48),
+    suggestedLabel: "NO_REPLY",
+    classificationReason: "Follow-up 1 sent 4 days ago. Sponsor has not replied yet. Due for second follow-up.",
+    confidence: "HIGH",
+    confirmedLabel: null,
+    messages: [
+      {
+        messageId: "msg_sb_001",
+        from: "Sarah Chen <sarah@hackathon.club>",
+        to: "Partnerships Lead <sponsorships@supabase.com>",
+        date: new Date(Date.now() - 3600000 * 120),
+        snippet: "Hi Supabase Team, We would love to feature Supabase as our Official Database Partner...",
+        body: "Hi Supabase Partnerships Lead,\n\nWe would love to feature Supabase as our Official Database Partner for HackFest 2026, empowering 500+ builders to build full-stack apps in 36 hours.\n\nWe would love to provide participants with Supabase credits and host a prize bounty for best backend architecture.\n\nWould you be open to a quick 10-minute sync?\n\nBest regards,\nSarah Chen\nOutreach Coordinator",
+        isFromSponsor: false
+      },
+      {
+        messageId: "msg_sb_002",
+        from: "Sarah Chen <sarah@hackathon.club>",
+        to: "Partnerships Lead <sponsorships@supabase.com>",
+        date: new Date(Date.now() - 3600000 * 48),
+        snippet: "Checking in to see if you had a chance to review our proposal for the Supabase backend track...",
+        body: "Hi Supabase Team,\n\nFollowing up on my previous note. We are finalizing our sponsor tracks this week and would be thrilled to include Supabase.\n\nLet me know if you would like me to share our 1-page partnership prospectus.\n\nBest,\nSarah Chen",
+        isFromSponsor: false
+      }
+    ]
+  },
+  {
+    _id: "675000000000000000000004",
+    threadId: "gmail_thread_stripe_104",
+    companyId: defaultCompanies[2],
+    outreachId: defaultOutreaches[3],
+    emailId: null,
+    subject: "Fintech Innovation Track & Cash Sponsorship - Stripe × ACM NIT Surat",
+    snippet: "Hi Alex, Thanks for reaching out. We are reviewing our Q4 university sponsorship allocations...",
+    lastMessageAt: new Date(Date.now() - 3600000 * 12),
+    suggestedLabel: "INTERESTED",
+    classificationReason: "Sponsor requested the formal sponsorship prospectus, tier matrix, and past participant demographic stats.",
+    confidence: "MEDIUM",
+    confirmedLabel: null,
+    messages: [
+      {
+        messageId: "msg_st_001",
+        from: "Alex Kumar <alex@hackathon.club>",
+        to: "University Partnerships <sponsorships@stripe.com>",
+        date: new Date(Date.now() - 3600000 * 36),
+        snippet: "Partnering with Stripe for HackFest 2026 Fintech track...",
+        body: "Hi Stripe University Partnerships,\n\nWe are hosting 500+ top engineering builders at HackFest 2026 and would love to propose a dedicated Fintech & Payments Innovation track powered by Stripe.\n\nCould we share our Gold tier sponsorship prospectus with your team?\n\nBest regards,\nAlex Kumar",
+        isFromSponsor: false
+      },
+      {
+        messageId: "msg_st_002",
+        from: "University Partnerships <sponsorships@stripe.com>",
+        to: "Alex Kumar <alex@hackathon.club>",
+        date: new Date(Date.now() - 3600000 * 12),
+        snippet: "Hi Alex, Thanks for reaching out. We are reviewing our Q4 university sponsorship allocations...",
+        body: "Hi Alex,\n\nThanks for reaching out! We are currently reviewing our university sponsorship allocations for upcoming hackathons.\n\nPlease share your complete sponsorship brochure, attendee demographic numbers, and deliverables for the Gold tier track.\n\nBest,\nStripe University Relations",
+        isFromSponsor: true
+      }
+    ]
+  },
+  {
+    _id: "675000000000000000000005",
+    threadId: "gmail_thread_gfg_105",
+    companyId: defaultCompanies[3],
+    outreachId: defaultOutreaches[4],
+    emailId: null,
+    subject: "GeeksforGeeks Academic Learning & Swag Partner - HackFest 2026",
+    snippet: "Hi GfG Team, We would love to feature GeeksforGeeks learning vouchers and swag hampers...",
+    lastMessageAt: new Date(Date.now() - 3600000 * 15),
+    suggestedLabel: "PENDING_CLASSIFICATION",
+    classificationReason: "Outbound draft prepared. Initial outreach logged.",
+    confidence: "HIGH",
+    confirmedLabel: null,
+    messages: [
+      {
+        messageId: "msg_gfg_001",
+        from: "Sarah Chen <sarah@hackathon.club>",
+        to: "Campus Relations <campus@geeksforgeeks.org>",
+        date: new Date(Date.now() - 3600000 * 15),
+        snippet: "Hi GfG Team, We would love to feature GeeksforGeeks learning vouchers and swag hampers...",
+        body: "Hi GeeksforGeeks Campus Team,\n\nWe are organizing HackFest 2026 and would love to partner with GfG to provide participant interview vouchers, course subscriptions, and winner prize hampers.\n\nCould we connect to discuss a Silver tier academic partnership?\n\nBest regards,\nSarah Chen",
+        isFromSponsor: false
+      }
+    ]
+  }
+];
+
 let seedingInProgress = false;
 
 /**
@@ -347,6 +504,7 @@ const autoSeedDatabase = async () => {
     const TeamMember = require("../models/teamMember");
     const { Outreach } = require("../models/outreach");
     const { Email } = require("../models/email");
+    const { GmailThread } = require("../models/gmailThread");
 
     const companyCount = await Company.countDocuments();
     if (companyCount > 0) {
@@ -392,13 +550,14 @@ const autoSeedDatabase = async () => {
     }
 
     // 4. Seed Outreaches
+    const savedOutreaches = [];
     for (let i = 0; i < defaultOutreaches.length; i++) {
       const o = defaultOutreaches[i];
       const comp = savedCompanies[i % savedCompanies.length];
       const mem = savedMembers[i % savedMembers.length];
       const email = savedEmails[i] ? savedEmails[i]._id : null;
 
-      await Outreach.findOneAndUpdate(
+      const doc = await Outreach.findOneAndUpdate(
         { companyId: comp._id, memberId: mem._id },
         {
           $setOnInsert: {
@@ -408,11 +567,33 @@ const autoSeedDatabase = async () => {
             emailId: email ? email.toString() : null
           }
         },
+        { upsert: true, new: true }
+      );
+      savedOutreaches.push(doc);
+    }
+
+    // 5. Seed Gmail Threads
+    for (let i = 0; i < defaultThreads.length; i++) {
+      const t = defaultThreads[i];
+      const comp = savedCompanies[i % savedCompanies.length];
+      const out = savedOutreaches[i % savedOutreaches.length];
+      const email = savedEmails[i] ? savedEmails[i]._id : null;
+
+      await GmailThread.findOneAndUpdate(
+        { threadId: t.threadId },
+        {
+          $setOnInsert: {
+            ...t,
+            companyId: comp ? comp._id : null,
+            outreachId: out ? out._id : null,
+            emailId: email || null
+          }
+        },
         { upsert: true }
       );
     }
 
-    console.log("[AutoSeed] Successfully populated deployment database with sample companies, members, and outreaches.");
+    console.log("[AutoSeed] Successfully populated deployment database with sample companies, members, outreaches, and threads.");
   } catch (err) {
     console.warn("[AutoSeed] Warning during initial seed:", err.message);
   } finally {
@@ -425,6 +606,7 @@ module.exports = {
   defaultTeamMembers,
   defaultOutreaches,
   defaultEmails,
+  defaultThreads,
   defaultStats,
   autoSeedDatabase
 };

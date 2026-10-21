@@ -14,6 +14,7 @@
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "seed:outreach": "cd backend && npm run seed:outreach",
     "db:clear": "cd backend && npm run db:clear",
+    "clear:drafts": "cd backend && npm run clear:drafts",
     "test": "cd backend && node src/scripts/testOutreachLogic.js && node src/scripts/testDeleteRejectedDraft.js && node src/scripts/testPerformanceOptimizations.js"
   },
   "keywords": [

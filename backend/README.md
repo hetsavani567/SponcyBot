@@ -4,6 +4,20 @@ Express & Node.js backend powering SponcyBot's sponsor intelligence, proposal dr
 
 ---
 
+## 🛠️ Backend Tech Stack
+
+| Component | Technology | Description |
+|---|---|---|
+| **Runtime & Framework** | **Node.js (v18+/v20+)**, **Express.js (v4.x)** | Clean MVC & Service Layer architecture, JSON body parsers, centralized error handling. |
+| **Database & ODM** | **MongoDB (Atlas & Local)**, **Mongoose 8.x** | Document schemas, schema validations, atomic status updates, and audit trail models. |
+| **In-Memory Cache** | **Tag-based LRU/TTL Cache** | Sub-5ms response latency, stampede deduplication of concurrent calls, tag invalidation. |
+| **AI & LLM Services** | **Google Gemini API**, **Tavily AI Search** | Multi-factor sponsor scoring, company research extraction, dynamic requirement-driven email drafting. |
+| **Outbound Email Engine** | **Google Gmail REST API (v1)**, **OAuth 2.0 PKCE** | RFC 2822 Base64url MIME compiler, Send Guard approval enforcement, live reply classification. |
+| **Security & Guardrails** | **Send Guard Middleware**, **Repetition Guard** | Strictly blocks unapproved email dispatch and prevents sending identical canned email drafts. |
+| **Testing Suite** | **Native Node.js Test Runner (`assert`)** | Automated tests for CRM follow-up limits, Send Guard enforcement, and cache invalidation. |
+
+---
+
 ## Directory Structure
 
 ```

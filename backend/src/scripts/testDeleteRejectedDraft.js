@@ -108,6 +108,57 @@ function runTests() {
   assert.strictEqual(protectedEmails.length, 1, "Dispatched SENT email must be completely protected from bulk queue clearing");
   console.log("  ✓ Bulk clear queue wipes mock/unwanted drafts safely while protecting dispatched communications");
 
+  // Test 7: Event Name & Event Dates Customization
+  console.log("Test 7: Event Name & Dates Customization in AI Prompts & Fallback");
+  const { buildEmailPrompt } = require("../services/emailPrompts");
+  const { generateFallbackEmail, parseAndValidateEmailResponse } = require("../services/emailGenerationService");
+
+  const testCompany = {
+    name: "Vercel Inc",
+    category: "Cloud & DevTools",
+    recommendedTier: "Gold",
+    recommendedAsk: "infra"
+  };
+
+  // 7a: Custom Event and Dates
+  const customPrompt = buildEmailPrompt(testCompany, {
+    eventName: "InnovateX 2026",
+    eventDates: "December 12–14, 2026"
+  });
+  assert(customPrompt.includes("InnovateX 2026"), "Prompt must include custom event name");
+  assert(customPrompt.includes("December 12–14, 2026"), "Prompt must include custom event dates");
+  assert(!customPrompt.includes("Sponsy Bot Hackathon 2026"), "Prompt must not use obsolete hardcoded bot hackathon name");
+
+  const customFallback = generateFallbackEmail(testCompany, {
+    eventName: "InnovateX 2026",
+    eventDates: "December 12–14, 2026",
+    customInstructions: "Propose $5k bounty for Next.js builders"
+  });
+  assert(customFallback.subject.includes("InnovateX 2026"), "Fallback subject must use custom event name");
+  assert(customFallback.body.includes("InnovateX 2026"), "Fallback body must use custom event name");
+  assert(customFallback.body.includes("December 12–14, 2026"), "Fallback body must use custom event dates");
+  assert(customFallback.body.includes("Next.js"), "Fallback body must weave custom requirement");
+
+  // 7b: Default Event and Dates
+  const defaultPrompt = buildEmailPrompt(testCompany);
+  assert(defaultPrompt.includes("HackFest 2026"), "Default event name must be HackFest 2026");
+  assert(!defaultPrompt.includes("Sponsy Bot Hackathon 2026"), "Default event name must not be Sponsy Bot Hackathon");
+
+  // 7c: Dynamic Bracket Placeholder Replacer
+  const rawWithBrackets = JSON.stringify({
+    subject: "Partner with [Event Name]",
+    body: "Join us for [Event Name] on [Event Dates]. Best, [Organizer Name]"
+  });
+  const resolved = parseAndValidateEmailResponse(rawWithBrackets, testCompany, {
+    eventName: "BuilderHacks 2027",
+    eventDates: "March 5–7, 2027"
+  });
+  assert.strictEqual(resolved.subject, "Partner with BuilderHacks 2027");
+  assert(resolved.body.includes("BuilderHacks 2027"));
+  assert(resolved.body.includes("March 5–7, 2027"));
+  assert(!resolved.body.includes("[Event"));
+  console.log("  ✓ Event Name & Event Dates are dynamically propagated, replacing hardcoded Sponsy Bot defaults");
+
   console.log("\n🎉 ALL DRAFT APPROVAL, REPETITION GUARD & SUBJECT LOGIC TESTS PASSED!\n");
 }
 
