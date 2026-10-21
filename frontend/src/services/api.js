@@ -388,7 +388,7 @@ export const api = {
 
   // Email Proposals & Approval Queue
   getEmails: async (forceRefresh = false) => {
-    const { data } = await safeFetchJson('/emails', { noCache: forceRefresh, ttlMs: 15000 });
+    const { data } = await safeFetchJson('/emails', { noCache: forceRefresh, ttlMs: forceRefresh ? 0 : 15000 });
     if (Array.isArray(data?.data)) return data.data;
     if (Array.isArray(data?.data?.emails)) return data.data.emails;
     if (Array.isArray(data?.emails)) return data.emails;
@@ -461,8 +461,9 @@ export const api = {
     return { res, data };
   },
 
-  deleteEmail: async (emailId) => {
-    const { res, data } = await safeFetchJson(`/emails/${emailId}`, {
+  deleteEmail: async (emailId, force = true) => {
+    const url = force ? `/emails/${emailId}?force=true` : `/emails/${emailId}`;
+    const { res, data } = await safeFetchJson(url, {
       method: 'DELETE'
     });
     invalidateCache('/emails');
@@ -533,7 +534,7 @@ export const api = {
   // Outreach CRM
   getOutreach: async (mode = 'all', forceRefresh = false) => {
     const url = mode === 'due' ? '/outreach/pending-followups' : '/outreach';
-    const { data } = await safeFetchJson(url, { noCache: forceRefresh, ttlMs: 15000 });
+    const { data } = await safeFetchJson(url, { noCache: forceRefresh, ttlMs: forceRefresh ? 0 : 15000 });
     if (mode === 'due') {
       if (Array.isArray(data?.pendingFollowUps)) return data.pendingFollowUps;
       if (Array.isArray(data?.data)) return data.data;

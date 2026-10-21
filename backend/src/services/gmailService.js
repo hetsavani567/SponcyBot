@@ -420,6 +420,21 @@ const fetchThread = async (threadId, mock = false) => {
     };
   }
 
+  // Look up in in-memory defaultThreads
+  try {
+    const { defaultThreads } = require("./seedDataService");
+    const memThread = defaultThreads.find((t) => t.threadId === threadId);
+    if (memThread) {
+      return {
+        threadId,
+        subject: memThread.subject || "Outreach Thread",
+        snippet: memThread.snippet || "",
+        lastMessageAt: memThread.lastMessageAt || new Date(),
+        messages: memThread.messages || []
+      };
+    }
+  } catch (_) {}
+
   // Clean empty state if thread does not exist yet
   return {
     threadId,

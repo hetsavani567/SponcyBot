@@ -16,10 +16,10 @@ export default function OutreachTab({
   const [loading, setLoading] = useState(false);
   const [filterMode, setFilterMode] = useState('all');
 
-  const loadOutreach = useCallback(async (mode = filterMode) => {
+  const loadOutreach = useCallback(async (mode = filterMode, forceRefresh = false) => {
     setLoading(true);
     try {
-      const data = await api.getOutreach(mode);
+      const data = await api.getOutreach(mode, forceRefresh);
       setOutreaches(Array.isArray(data) ? data : []);
     } catch (err) {
       onShowToast(`Failed to load outreach records: ${err.message}`, 'error');
@@ -29,7 +29,7 @@ export default function OutreachTab({
   }, [filterMode, onShowToast]);
 
   useEffect(() => {
-    loadOutreach(filterMode);
+    loadOutreach(filterMode, true);
   }, [filterMode, loadOutreach, refreshTrigger]);
 
   const handleRegisterFollowUp = async (outreachId) => {
@@ -97,15 +97,15 @@ export default function OutreachTab({
       const { res, data } = await api.deleteOutreach(outreachId);
       if (res.ok) {
         onShowToast(`Outreach for ${companyName} removed successfully.`, 'info');
-        loadOutreach();
+        loadOutreach(filterMode, true);
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to remove outreach', 'error');
-        loadOutreach();
+        loadOutreach(filterMode, true);
       }
     } catch (err) {
       onShowToast(err.message, 'error');
-      loadOutreach();
+      loadOutreach(filterMode, true);
     }
   };
 
@@ -285,7 +285,7 @@ export default function OutreachTab({
                           )}
 
                           <button
-                            onClick={() => onOpenSimulateReply(o._id, o.threadId || '', compName)}
+                            onClick={() => onOpenSimulateReply && onOpenSimulateReply(o._id, o.threadId || '', compName)}
                             title="Record Sponsor Inbound Reply (Approved, Denied, Out of Office)"
                             className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px] flex items-center space-x-1"
                           >

@@ -127,10 +127,7 @@ const getAllOutreach = async (req, res) => {
         .sort({ updatedAt: -1 })
         .lean();
 
-      if (results && results.length > 0) {
-        return results;
-      }
-      return filterFn(defaultOutreaches);
+      return results || [];
     }, 15, "outreach");
 
     res.setHeader("Cache-Control", "private, no-cache");
@@ -139,7 +136,14 @@ const getAllOutreach = async (req, res) => {
     console.error("Get all outreach error:", error);
     try {
       const { defaultOutreaches } = require("../services/seedDataService");
-      res.json(defaultOutreaches);
+      const { status, memberId, companyId } = req.query;
+      const filterFn = (items) => items.filter(item => {
+        if (status && item.status !== status) return false;
+        if (memberId && String(item.memberId?._id || item.memberId?.id || item.memberId) !== String(memberId)) return false;
+        if (companyId && String(item.companyId?._id || item.companyId?.id || item.companyId) !== String(companyId)) return false;
+        return true;
+      });
+      res.json(filterFn(defaultOutreaches));
     } catch (_) {
       res.json([]);
     }
@@ -548,14 +552,25 @@ const deleteOutreach = async (req, res) => {
       return res.status(400).json({ success: false, message: "Outreach ID is required" });
     }
 
+    // 1. Delete from MongoDB if connected
     if (mongoose.connection.readyState === 1 && isValidObjectId(id)) {
-      const outreach = await Outreach.findById(id);
-      if (outreach) {
-        await OutreachEvent.deleteMany({ outreachId: id }).catch(() => {});
-        const { GmailThread } = require("../models/gmailThread");
-        await GmailThread.updateMany({ outreachId: id }, { $set: { outreachId: null } }).catch(() => {});
-        await Outreach.findByIdAndDelete(id);
+      try {
+        const outreach = await Outreach.findById(id);
+        if (outreach) {
+          await OutreachEvent.deleteMany({ outreachId: id }).catch(() => {});
+          const { GmailThread } = require("../models/gmailThread");
+          await GmailThread.updateMany({ outreachId: id }, { $set: { outreachId: null } }).catch(() => {});
+          await Outreach.findByIdAndDelete(id);
+        }
+      } catch (dbErr) {
+        console.warn("[deleteOutreach] DB warning:", dbErr.message);
       }
+    }
+
+    // 2. ALWAYS remove from in-memory fallback dataset
+    const { removeInMemoryOutreach } = require("../services/seedDataService");
+    if (typeof removeInMemoryOutreach === "function") {
+      removeInMemoryOutreach(id);
     }
 
     serverCache.invalidateTag("outreach");
@@ -569,9 +584,18 @@ const deleteOutreach = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete outreach error:", error);
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || "Failed to remove outreach record"
+    try {
+      const { removeInMemoryOutreach } = require("../services/seedDataService");
+      if (typeof removeInMemoryOutreach === "function") {
+        removeInMemoryOutreach(req.params.id);
+      }
+    } catch (_) {}
+    serverCache.invalidateTag("outreach");
+    serverCache.invalidateTag("stats");
+    return res.status(200).json({
+      success: true,
+      message: "Outreach record removed successfully",
+      id: req.params.id
     });
   }
 };
