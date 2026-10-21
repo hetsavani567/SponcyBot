@@ -36,6 +36,11 @@ const connectDB = async () => {
       minPoolSize: 1
     }).then(conn => {
       console.log(`[Database] MongoDB connected successfully: ${conn.connection.host}`);
+      // Asynchronously auto-seed initial data if collections are empty (for deployment resilience)
+      try {
+        const { autoSeedDatabase } = require("../services/seedDataService");
+        autoSeedDatabase().catch(() => {});
+      } catch (_) {}
       return conn;
     }).catch(err => {
       cachedPromise = null;

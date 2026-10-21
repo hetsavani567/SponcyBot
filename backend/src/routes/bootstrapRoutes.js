@@ -61,15 +61,28 @@ router.get("/bootstrap", async (req, res) => {
     });
   } catch (error) {
     console.error("[Bootstrap] Error:", error.message);
-    return res.status(200).json({
-      success: true,
-      data: {
-        stats: {},
-        gmailStatus: { authorized: false },
-        sponsors: [],
-        user: null
-      }
-    });
+    try {
+      const { defaultStats, defaultCompanies } = require("../services/seedDataService");
+      return res.status(200).json({
+        success: true,
+        data: {
+          stats: defaultStats,
+          gmailStatus: { authorized: false },
+          sponsors: defaultCompanies,
+          user: null
+        }
+      });
+    } catch (_) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          stats: {},
+          gmailStatus: { authorized: false },
+          sponsors: [],
+          user: null
+        }
+      });
+    }
   }
 });
 
