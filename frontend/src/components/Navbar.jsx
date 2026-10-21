@@ -6,11 +6,14 @@ export default function Navbar({
   pendingApprovalsCount = 0,
   gmailStatus = {},
   user = null,
+  activeRole = 'Organizer',
   onOpenAuthModal,
+  onOpenTutorial,
   onSignOut,
   onOpenGmailModal,
   onOpenDemoModal
 }) {
+
   const isGmailConnected = Boolean(gmailStatus?.authorized);
   const email = gmailStatus?.email || (user?.email || 'sponsorships@hackathon.club');
 
@@ -94,6 +97,17 @@ export default function Navbar({
             </span>
           </div>
 
+          {/* Interactive Tutorial Button */}
+          <button
+            type="button"
+            onClick={onOpenTutorial}
+            title="Open SponcyBot Interactive Walkthrough & Basics Tutorial"
+            className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-emerald-300 hover:border-emerald-500/50 hover:bg-slate-800 text-xs font-semibold transition shadow-sm"
+          >
+            <span className="text-xs">💡</span>
+            <span className="hidden sm:inline text-[11px]">Tutorial</span>
+          </button>
+
           {/* User Authentication Pill / Sign In Button */}
           {user ? (
             <div className="flex items-center space-x-2 bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 shadow-sm">
@@ -101,11 +115,11 @@ export default function Navbar({
                 {(user.name || user.username || 'U')[0].toUpperCase()}
               </div>
               <div className="text-left hidden xl:block leading-tight">
-                <div className="text-xs font-semibold text-white truncate max-w-[100px]">
+                <div className="text-xs font-semibold text-white truncate max-w-[110px]">
                   {user.name || user.username}
                 </div>
-                <div className="text-[10px] text-emerald-400 truncate max-w-[100px]">
-                  {user.role || 'Organizer'}
+                <div className="text-[10px] text-emerald-400 truncate max-w-[130px] font-medium">
+                  {user.role ? (user.role.includes('Organizer') ? `👑 ${user.role}` : user.role.includes('Coordinator') ? `📋 ${user.role}` : `💼 ${user.role}`) : '👑 Organizer'}
                 </div>
               </div>
               <button

@@ -170,7 +170,7 @@ const registerUser = async ({ username, email, password, name, role }) => {
 /**
  * Authenticate user by username/email and password
  */
-const authenticateUser = async ({ usernameOrEmail, password }) => {
+const authenticateUser = async ({ usernameOrEmail, password, role }) => {
   const identifier = String(usernameOrEmail).trim().toLowerCase();
 
   let targetUser = null;
@@ -203,11 +203,22 @@ const authenticateUser = async ({ usernameOrEmail, password }) => {
     throw new Error("Invalid username/email or password");
   }
 
+  // Update user role if explicitly chosen during signin
+  const activeRole = role && String(role).trim() ? String(role).trim() : targetUser.role;
+  targetUser.role = activeRole;
+  if (mongoose.connection.readyState === 1 && typeof targetUser.save === "function") {
+    try {
+      await targetUser.save();
+    } catch (saveErr) {
+      console.warn("[AuthService] Update user role warning:", saveErr.message);
+    }
+  }
+
   const token = createToken({
     id: targetUser._id || targetUser.id,
     username: targetUser.username,
     email: targetUser.email,
-    role: targetUser.role
+    role: activeRole
   });
 
   return {
@@ -216,7 +227,7 @@ const authenticateUser = async ({ usernameOrEmail, password }) => {
       username: targetUser.username,
       email: targetUser.email,
       name: targetUser.name,
-      role: targetUser.role
+      role: activeRole
     },
     token
   };

@@ -675,8 +675,41 @@ const updateCompany = async (req, res) => {
   }
 };
 
+const extractUserRole = (req) => {
+  if (req.user?.role) return String(req.user.role).trim();
+  if (req.headers && req.headers["x-user-role"]) {
+    return String(req.headers["x-user-role"]).trim();
+  }
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    try {
+      const { verifyToken } = require("../services/authService");
+      const payload = verifyToken(authHeader.slice(7).trim());
+      if (payload?.role) return String(payload.role).trim();
+    } catch {}
+  }
+  if (req.query?.role) return String(req.query.role).trim();
+  if (req.body?.role) return String(req.body.role).trim();
+  return null;
+};
+
+const isOrganizerRole = (role) => {
+  if (!role) return false;
+  const r = role.toLowerCase();
+  if (r.includes("coordinator")) return false;
+  return r.includes("organizer") || r.includes("lead") || r.includes("director") || r.includes("admin") || r === "organizer";
+};
+
 const deleteCompany = async (req, res) => {
   try {
+    const role = extractUserRole(req);
+    if (!isOrganizerRole(role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Permission Denied: Only Organizers can remove sponsor companies."
+      });
+    }
+
     const { id } = req.params;
     let deleted = null;
 
@@ -695,6 +728,7 @@ const deleteCompany = async (req, res) => {
     serverCache.invalidateTag("stats");
 
     return res.json({
+      success: true,
       message: "Company deleted successfully",
       company: deleted || { _id: id }
     });

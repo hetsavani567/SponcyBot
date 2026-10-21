@@ -304,7 +304,14 @@ const updateStatusHandler = async (req, res) => {
       return res.status(400).json({ message: "Invalid outreach ID" });
     }
 
-    if (!status || !OUTREACH_STATUSES.includes(status)) {
+    let normalizedStatus = String(status || "").trim().toUpperCase();
+    if (["APPROVED", "APPROVE"].includes(normalizedStatus)) normalizedStatus = "INTERESTED";
+    if (["DENIED", "DENY", "REJECTED"].includes(normalizedStatus)) normalizedStatus = "DECLINED";
+    if (["OUTOFOFFICE", "OUT_OF_OFFICE", "OUT OF OFFICE", "OOO"].includes(normalizedStatus)) normalizedStatus = "OUT OF OFFICE";
+    if (["REPLY", "REPLIED"].includes(normalizedStatus)) normalizedStatus = "WAITING FOR REPLY";
+    if (["NO_REPLY", "NOREPLY"].includes(normalizedStatus)) normalizedStatus = "NO REPLY";
+
+    if (!normalizedStatus || !OUTREACH_STATUSES.includes(normalizedStatus)) {
       return res.status(400).json({
         message: `Invalid or missing status. Must be one of: ${OUTREACH_STATUSES.join(", ")}`
       });
@@ -315,7 +322,7 @@ const updateStatusHandler = async (req, res) => {
       return res.status(404).json({ message: "Outreach record not found" });
     }
 
-    const updated = await updateOutreachStatus(outreach, status, {
+    const updated = await updateOutreachStatus(outreach, normalizedStatus, {
       reason,
       meetingLink,
       meetingScheduledAt,
@@ -502,6 +509,73 @@ const exportOutreachCSV = async (req, res) => {
   }
 };
 
+const extractUserRole = (req) => {
+  if (req.user?.role) return String(req.user.role).trim();
+  if (req.headers && req.headers["x-user-role"]) {
+    return String(req.headers["x-user-role"]).trim();
+  }
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    try {
+      const { verifyToken } = require("../services/authService");
+      const payload = verifyToken(authHeader.slice(7).trim());
+      if (payload?.role) return String(payload.role).trim();
+    } catch {}
+  }
+  if (req.query?.role) return String(req.query.role).trim();
+  if (req.body?.role) return String(req.body.role).trim();
+  return null;
+};
+
+const isOutreachCoordinatorRole = (role) => {
+  if (!role) return false;
+  const r = role.toLowerCase();
+  return r.includes("outreach") || r.includes("coordinator");
+};
+
+const deleteOutreach = async (req, res) => {
+  try {
+    const role = extractUserRole(req);
+    if (!isOutreachCoordinatorRole(role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Permission Denied: Only Outreach Coordinators can remove outreach CRM records."
+      });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Outreach ID is required" });
+    }
+
+    if (mongoose.connection.readyState === 1 && isValidObjectId(id)) {
+      const outreach = await Outreach.findById(id);
+      if (outreach) {
+        await OutreachEvent.deleteMany({ outreachId: id }).catch(() => {});
+        const { GmailThread } = require("../models/gmailThread");
+        await GmailThread.updateMany({ outreachId: id }, { $set: { outreachId: null } }).catch(() => {});
+        await Outreach.findByIdAndDelete(id);
+      }
+    }
+
+    serverCache.invalidateTag("outreach");
+    serverCache.invalidateTag("stats");
+    serverCache.invalidateTag("threads");
+
+    return res.status(200).json({
+      success: true,
+      message: "Outreach record removed successfully",
+      id
+    });
+  } catch (error) {
+    console.error("Delete outreach error:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to remove outreach record"
+    });
+  }
+};
+
 module.exports = {
   createOutreach,
   getAllOutreach,
@@ -513,5 +587,6 @@ module.exports = {
   getCommsHistory,
   getDashboardStatsHandler,
   handleGmailWebhook,
-  exportOutreachCSV
+  exportOutreachCSV,
+  deleteOutreach
 };

@@ -9,6 +9,7 @@ const OUTREACH_STATUSES = [
   "MEETING",
   "DECLINED",
   "NO REPLY",
+  "OUT OF OFFICE",
   "FOLLOW-UP 1",
   "FOLLOW-UP 2",
   "CLOSED"

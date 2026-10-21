@@ -135,39 +135,49 @@ const closeOutreach = async (outreach, reason = "Closed by organizer") => {
 };
 
 const updateOutreachStatus = async (outreach, newStatus, { reason = "", meetingLink = "", meetingScheduledAt = null, threadId = null, metadata = {} } = {}) => {
-  if (!OUTREACH_STATUSES.includes(newStatus)) {
+  // Normalize incoming status
+  let resolvedStatus = String(newStatus || "").trim().toUpperCase();
+  if (["DENIED", "DENY", "REJECTED"].includes(resolvedStatus)) resolvedStatus = "DECLINED";
+  if (["OUTOFOFFICE", "OUT_OF_OFFICE", "OUT OF OFFICE", "OOO"].includes(resolvedStatus)) resolvedStatus = "OUT OF OFFICE";
+  if (["REPLY", "REPLIED"].includes(resolvedStatus)) resolvedStatus = "WAITING FOR REPLY";
+
+  if (!OUTREACH_STATUSES.includes(resolvedStatus)) {
     const error = new Error(`Invalid status: ${newStatus}. Allowed: ${OUTREACH_STATUSES.join(", ")}`);
     error.statusCode = 400;
     throw error;
   }
 
   const fromStatus = outreach.status;
-  outreach.status = newStatus;
+  outreach.status = resolvedStatus;
 
   if (threadId) {
     outreach.threadId = threadId;
   }
 
   // Handle specific status side-effects
-  if (newStatus === "SENT") {
+  if (resolvedStatus === "SENT") {
     outreach.lastContactedAt = new Date();
     // Schedule follow-up 1 in 3 days if not already followed up
     if (outreach.followUpCount === 0) {
       outreach.nextFollowUpAt = calculateNextFollowUpDate(3);
     }
-  } else if (newStatus === "INTERESTED") {
+  } else if (resolvedStatus === "INTERESTED" || resolvedStatus === "APPROVED") {
     outreach.lastReplyAt = new Date();
     outreach.nextFollowUpAt = null; // Don't send automated follow-up when sponsor is interested
-  } else if (newStatus === "MEETING") {
+  } else if (resolvedStatus === "OUT OF OFFICE") {
+    outreach.lastReplyAt = new Date();
+    // Schedule delayed follow-up in 5 days after sponsor returns
+    outreach.nextFollowUpAt = calculateNextFollowUpDate(5);
+  } else if (resolvedStatus === "MEETING") {
     outreach.lastReplyAt = new Date();
     outreach.nextFollowUpAt = null;
     if (meetingLink) outreach.meetingLink = meetingLink;
     if (meetingScheduledAt) outreach.meetingScheduledAt = new Date(meetingScheduledAt);
-  } else if (newStatus === "DECLINED") {
+  } else if (resolvedStatus === "DECLINED") {
     outreach.lastReplyAt = new Date();
     outreach.nextFollowUpAt = null;
     outreach.closedReason = reason || "Sponsor declined to participate";
-  } else if (newStatus === "CLOSED") {
+  } else if (resolvedStatus === "CLOSED") {
     outreach.nextFollowUpAt = null;
     if (reason) outreach.closedReason = reason;
   }
@@ -177,10 +187,10 @@ const updateOutreachStatus = async (outreach, newStatus, { reason = "", meetingL
   serverCache.invalidateTag("stats");
 
   let eventType = "STATUS_CHANGED";
-  if (newStatus === "EMAIL_SENT" || newStatus === "SENT") eventType = "EMAIL_SENT";
-  else if (newStatus === "INTERESTED" || newStatus === "DECLINED") eventType = "REPLY_RECEIVED";
-  else if (newStatus === "MEETING") eventType = "MEETING_BOOKED";
-  else if (newStatus === "CLOSED") eventType = "CLOSED";
+  if (resolvedStatus === "EMAIL_SENT" || resolvedStatus === "SENT") eventType = "EMAIL_SENT";
+  else if (["INTERESTED", "DECLINED", "APPROVED", "OUT OF OFFICE", "WAITING FOR REPLY"].includes(resolvedStatus)) eventType = "REPLY_RECEIVED";
+  else if (resolvedStatus === "MEETING") eventType = "MEETING_BOOKED";
+  else if (resolvedStatus === "CLOSED") eventType = "CLOSED";
 
   await recordEvent({
     outreachId: outreach._id,

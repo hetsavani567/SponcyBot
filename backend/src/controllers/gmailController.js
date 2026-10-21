@@ -250,7 +250,7 @@ const sendEmail = async (req, res) => {
     serverCache.invalidateTag("stats");
     serverCache.invalidateTag("outreach");
 
-    // 2. Synchronize with Outreach CRM
+    // 2. Synchronize with Outreach CRM (auto-create if missing)
     let outreach = null;
     if (req.body.outreachId) {
       outreach = await Outreach.findById(req.body.outreachId);
@@ -258,6 +258,35 @@ const sendEmail = async (req, res) => {
     if (!outreach) {
       outreach = await Outreach.findOne({
         $or: [{ emailId: email._id.toString() }, { companyId: email.companyId }]
+      });
+    }
+
+    if (!outreach && email.companyId) {
+      const TeamMember = require("../models/teamMember");
+      const { defaultTeamMembers } = require("../services/seedDataService");
+      const { recordEvent } = require("../services/outreachService");
+      let member = await TeamMember.findOne({ active: true });
+      if (!member) member = await TeamMember.findOne();
+      if (!member) {
+        try { member = await TeamMember.create(defaultTeamMembers[0]); } catch (_) { member = defaultTeamMembers[0]; }
+      }
+      outreach = await Outreach.create({
+        companyId: email.companyId,
+        memberId: member._id || member.id,
+        emailId: email._id.toString(),
+        status: "DRAFT",
+        followUpCount: 0,
+        notes: `Outreach auto-created upon dispatch to ${recipient}.`
+      });
+      await recordEvent({
+        outreachId: outreach._id,
+        companyId: email.companyId,
+        memberId: member._id || member.id,
+        eventType: "OUTREACH_CREATED",
+        fromStatus: null,
+        toStatus: "DRAFT",
+        description: `Outreach auto-created upon email dispatch to ${recipient}.`,
+        metadata: { recipient, emailId: email._id }
       });
     }
 
@@ -273,6 +302,36 @@ const sendEmail = async (req, res) => {
           notes: "Email sent via Gmail integration"
         }
       });
+    }
+
+    // 3. Upsert GmailThread
+    if (sendResult.threadId) {
+      const { GmailThread } = require("../models/gmailThread");
+      const messageSnippet = (email.body || "").slice(0, 160);
+      await GmailThread.findOneAndUpdate(
+        { threadId: sendResult.threadId },
+        {
+          threadId: sendResult.threadId,
+          companyId: email.companyId || null,
+          outreachId: outreach?._id || null,
+          emailId: email._id,
+          subject: email.subject,
+          snippet: messageSnippet,
+          lastMessageAt: new Date(),
+          $push: {
+            messages: {
+              messageId: sendResult.messageId,
+              from: sendResult.senderEmail,
+              to: recipient,
+              date: new Date(),
+              snippet: messageSnippet,
+              body: email.body,
+              isFromSponsor: false
+            }
+          }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).catch((err) => console.warn("[GmailController] Failed to upsert GmailThread:", err.message));
     }
 
     return res.status(200).json({
@@ -390,6 +449,8 @@ const getThreadById = async (req, res) => {
     const { fetchThread, classifyReplyWithAI } = require("../services/gmailService");
     const { GmailThread } = require("../models/gmailThread");
     const { Outreach } = require("../models/outreach");
+    const Company = require("../models/company");
+    const { Email } = require("../models/email");
     const { defaultThreads, defaultCompanies, defaultOutreaches } = require("../services/seedDataService");
     const mongoose = require("mongoose");
 
@@ -398,6 +459,7 @@ const getThreadById = async (req, res) => {
 
     if (mongoose.connection.readyState === 1) {
       try {
+        // 1. First look up by exact threadId
         threadDoc = await GmailThread.findOne({ threadId })
           .populate("companyId")
           .populate({
@@ -405,9 +467,76 @@ const getThreadById = async (req, res) => {
             populate: { path: "memberId", select: "name email role" }
           });
 
-        outreach = await Outreach.findOne({ threadId })
-          .populate("companyId", "name website category recommendedTier score")
-          .populate("memberId", "name email role");
+        // 2. If not found by threadId, see if threadId matches a companyId
+        if (!threadDoc) {
+          const compId = threadId.replace(/^thread_comp_/, "").replace(/^thread_/, "");
+          if (mongoose.Types.ObjectId.isValid(compId)) {
+            threadDoc = await GmailThread.findOne({ companyId: compId })
+              .populate("companyId")
+              .populate({
+                path: "outreachId",
+                populate: { path: "memberId", select: "name email role" }
+              });
+          }
+        }
+
+        if (threadDoc) {
+          if (threadDoc.outreachId) {
+            outreach = threadDoc.outreachId;
+          } else {
+            outreach = await Outreach.findOne({ $or: [{ threadId: threadDoc.threadId }, { companyId: threadDoc.companyId?._id || threadDoc.companyId }] })
+              .populate("companyId", "name website category recommendedTier score")
+              .populate("memberId", "name email role");
+          }
+        } else {
+          // Check if threadId corresponds to a Company to prepare a new thread structure
+          const compId = threadId.replace(/^thread_comp_/, "").replace(/^thread_/, "");
+          let compDoc = null;
+          if (mongoose.Types.ObjectId.isValid(compId)) {
+            compDoc = await Company.findById(compId);
+          }
+          if (!compDoc) {
+            compDoc = await Company.findOne({ name: new RegExp(`^${threadId}$`, "i") });
+          }
+
+          if (compDoc) {
+            const emailDoc = await Email.findOne({ companyId: compDoc._id }).sort({ updatedAt: -1 });
+            const outreachDoc = await Outreach.findOne({ companyId: compDoc._id })
+              .populate("companyId", "name website category recommendedTier score")
+              .populate("memberId", "name email role");
+
+            const preparedThread = {
+              threadId: threadId.startsWith("thread_") ? threadId : `thread_${compDoc._id}`,
+              companyId: compDoc,
+              outreachId: outreachDoc || null,
+              emailId: emailDoc ? emailDoc._id : null,
+              subject: emailDoc?.subject || `Partnering with HackFest 2026: ${compDoc.name} Sponsorship`,
+              snippet: emailDoc?.body ? emailDoc.body.slice(0, 100) : `Prepared outreach chat for ${compDoc.name}...`,
+              messages: emailDoc && (emailDoc.status === "SENT" || emailDoc.status === "APPROVED") ? [{
+                messageId: `msg_${Date.now()}`,
+                from: "Het Savani <het@hackathon.club>",
+                to: `${compDoc.contactName || compDoc.name} <${compDoc.contactEmail || "sponsor@company.com"}>`,
+                date: emailDoc.updatedAt || new Date(),
+                snippet: emailDoc.body.slice(0, 100),
+                body: emailDoc.body,
+                isFromSponsor: false
+              }] : [],
+              lastMessageAt: new Date(),
+              suggestedLabel: "PENDING_CLASSIFICATION",
+              classificationReason: "Prepared outreach conversation for sponsor.",
+              confidence: "HIGH",
+              isPrepared: true
+            };
+
+            return res.status(200).json({
+              success: true,
+              data: {
+                thread: preparedThread,
+                outreach: outreachDoc || null
+              }
+            });
+          }
+        }
       } catch (err) {
         console.warn("[GmailController] DB find thread warning:", err.message);
       }
@@ -415,10 +544,13 @@ const getThreadById = async (req, res) => {
 
     if (!threadDoc) {
       // Look up in defaultThreads
-      const defaultMatch = defaultThreads.find((t) => t.threadId === threadId);
+      const defaultMatch = defaultThreads.find((t) =>
+        t.threadId === threadId ||
+        String(t.companyId?._id || t.companyId?.id || t.companyId) === String(threadId)
+      );
       if (defaultMatch) {
-        const comp = typeof defaultMatch.companyId === "object" ? defaultMatch.companyId : defaultCompanies.find((c) => c._id === defaultMatch.companyId) || defaultCompanies[0];
-        const out = typeof defaultMatch.outreachId === "object" ? defaultMatch.outreachId : defaultOutreaches.find((o) => o._id === defaultMatch.outreachId) || defaultOutreaches[0];
+        const comp = typeof defaultMatch.companyId === "object" ? defaultMatch.companyId : defaultCompanies.find((c) => c._id === defaultMatch.companyId || c.id === defaultMatch.companyId) || defaultCompanies[0];
+        const out = typeof defaultMatch.outreachId === "object" ? defaultMatch.outreachId : defaultOutreaches.find((o) => o._id === defaultMatch.outreachId || o.id === defaultMatch.outreachId) || defaultOutreaches[0];
         return res.status(200).json({
           success: true,
           data: {
@@ -444,29 +576,35 @@ const getThreadById = async (req, res) => {
     }
 
     // Try fetching via live/mock fetchThread
-    const threadData = await fetchThread(threadId, isMock);
-    return res.status(200).json({
-      success: true,
-      data: {
-        thread: {
-          threadId,
-          subject: threadData.subject,
-          snippet: threadData.snippet,
-          messages: threadData.messages,
-          lastMessageAt: threadData.lastMessageAt
-        },
-        outreach: null
+    try {
+      const threadData = await fetchThread(threadId, isMock);
+      if (threadData && threadData.messages) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            thread: {
+              threadId,
+              subject: threadData.subject,
+              snippet: threadData.snippet,
+              messages: threadData.messages,
+              lastMessageAt: threadData.lastMessageAt
+            },
+            outreach: null
+          }
+        });
       }
+    } catch (_) {}
+
+    return res.status(404).json({
+      success: false,
+      message: "Thread not found",
+      data: null
     });
   } catch (error) {
     console.error("[GmailController] getThreadById error:", error);
-    const { defaultThreads } = require("../services/seedDataService");
-    return res.status(200).json({
-      success: true,
-      data: {
-        thread: defaultThreads[0],
-        outreach: null
-      }
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load thread detail"
     });
   }
 };
@@ -478,7 +616,7 @@ const getThreadById = async (req, res) => {
 const sendThreadReply = async (req, res) => {
   try {
     const threadId = req.params.threadId;
-    const { body, subject = "", recipientEmail = "", senderName = "Het Savani" } = req.body || {};
+    const { body, subject = "", recipientEmail = "", senderName = "Het Savani", companyId = null } = req.body || {};
 
     if (!body || !body.trim()) {
       return res.status(400).json({ success: false, message: "Reply body is required" });
@@ -487,8 +625,34 @@ const sendThreadReply = async (req, res) => {
     const { GmailThread } = require("../models/gmailThread");
     const { Outreach } = require("../models/outreach");
     const OutreachEvent = require("../models/outreachEvent");
+    const Company = require("../models/company");
+    const TeamMember = require("../models/teamMember");
     const serverCache = require("../services/cacheService");
     const mongoose = require("mongoose");
+
+    // 1. Check existing outbound messages sent by organizer to enforce 3-message limit
+    let threadDoc = null;
+    let existingOutboundCount = 0;
+
+    if (mongoose.connection.readyState === 1) {
+      threadDoc = await GmailThread.findOne({ threadId });
+      if (threadDoc && Array.isArray(threadDoc.messages)) {
+        existingOutboundCount = threadDoc.messages.filter(m => !m.isFromSponsor).length;
+      }
+    } else {
+      const { defaultThreads } = require("../services/seedDataService");
+      const existing = defaultThreads.find(t => t.threadId === threadId);
+      if (existing && Array.isArray(existing.messages)) {
+        existingOutboundCount = existing.messages.filter(m => !m.isFromSponsor).length;
+      }
+    }
+
+    if (existingOutboundCount >= 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Outreach limit reached: You can only send up to 3 messages per sponsor thread to prevent spam and protect deliverability."
+      });
+    }
 
     const newMsg = {
       messageId: `msg_${Date.now()}`,
@@ -500,22 +664,151 @@ const sendThreadReply = async (req, res) => {
       isFromSponsor: false
     };
 
-    let threadDoc = null;
     if (mongoose.connection.readyState === 1) {
-      threadDoc = await GmailThread.findOne({ threadId });
-      if (threadDoc) {
+      if (!threadDoc) {
+        // Find company from companyId param or threadId prefix
+        let cId = companyId;
+        if (!cId && threadId.startsWith("thread_")) {
+          cId = threadId.replace(/^thread_comp_/, "").replace(/^thread_/, "");
+        }
+        let comp = null;
+        if (cId && mongoose.Types.ObjectId.isValid(cId)) {
+          comp = await Company.findById(cId);
+        }
+        if (!comp && recipientEmail) {
+          comp = await Company.findOne({ contactEmail: recipientEmail });
+        }
+        if (!comp) {
+          comp = await Company.findOne();
+        }
+
+        // Link or create Outreach CRM record
+        let outreachDoc = comp ? await Outreach.findOne({ companyId: comp._id }) : null;
+        if (!outreachDoc && comp) {
+          let member = await TeamMember.findOne({ active: true });
+          if (!member) member = await TeamMember.findOne();
+          if (!member) {
+            try {
+              const { defaultTeamMembers } = require("../services/seedDataService");
+              member = await TeamMember.create(defaultTeamMembers[0]);
+            } catch {
+              const { defaultTeamMembers } = require("../services/seedDataService");
+              member = defaultTeamMembers[0];
+            }
+          }
+
+          if (member) {
+            outreachDoc = await Outreach.create({
+              companyId: comp._id,
+              memberId: member._id,
+              status: existingOutboundCount === 0 ? "WAITING FOR REPLY" : existingOutboundCount === 1 ? "FOLLOW-UP 1" : "FOLLOW-UP 2",
+              followUpCount: existingOutboundCount,
+              threadId: threadId,
+              lastContactedAt: new Date(),
+              nextFollowUpAt: existingOutboundCount < 2 ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) : null,
+              notes: existingOutboundCount === 0
+                ? `Initial outreach proposal sent to ${comp.name}`
+                : existingOutboundCount === 1
+                ? `Follow-up 1 sent to ${comp.name}`
+                : `Follow-up 2 sent to ${comp.name} (3/3 sent - limit reached)`
+            }).catch(() => null);
+          }
+        } else if (outreachDoc) {
+          if (existingOutboundCount === 0) {
+            if (outreachDoc.status === "DRAFT" || outreachDoc.status === "APPROVED") {
+              outreachDoc.status = "WAITING FOR REPLY";
+            }
+            outreachDoc.followUpCount = 0;
+            outreachDoc.nextFollowUpAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            outreachDoc.notes = `Outbound proposal sent to ${comp?.name || "sponsor"}`;
+          } else if (existingOutboundCount === 1) {
+            if (outreachDoc.status === "WAITING FOR REPLY" || outreachDoc.status === "SENT") {
+              outreachDoc.status = "FOLLOW-UP 1";
+            }
+            outreachDoc.followUpCount = 1;
+            outreachDoc.nextFollowUpAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            outreachDoc.notes = `Follow-up 1 sent to ${comp?.name || "sponsor"}`;
+          } else {
+            if (outreachDoc.status === "WAITING FOR REPLY" || outreachDoc.status === "SENT" || outreachDoc.status === "FOLLOW-UP 1") {
+              outreachDoc.status = "FOLLOW-UP 2";
+            }
+            outreachDoc.followUpCount = 2;
+            outreachDoc.nextFollowUpAt = null;
+            outreachDoc.notes = `Follow-up 2 sent to ${comp?.name || "sponsor"} (3/3 sent - limit reached)`;
+          }
+          outreachDoc.lastContactedAt = new Date();
+          outreachDoc.threadId = threadId;
+          await outreachDoc.save().catch(() => null);
+        }
+
+        threadDoc = new GmailThread({
+          threadId,
+          companyId: comp ? comp._id : null,
+          outreachId: outreachDoc ? outreachDoc._id : null,
+          subject: subject || (comp ? `Partnering with HackFest 2026: ${comp.name} Sponsorship` : "Outreach Discussion"),
+          snippet: newMsg.snippet,
+          messages: [newMsg],
+          lastMessageAt: new Date(),
+          suggestedLabel: "PENDING_CLASSIFICATION",
+          classificationReason: "Initial proposal email dispatched. Awaiting sponsor response.",
+          confidence: "HIGH"
+        });
+        await threadDoc.save();
+        await threadDoc.populate("companyId");
+        if (outreachDoc) {
+          await threadDoc.populate("outreachId");
+        }
+
+        if (outreachDoc) {
+          await OutreachEvent.create({
+            outreachId: outreachDoc._id,
+            companyId: comp ? comp._id : null,
+            eventType: "EMAIL_SENT",
+            description: `Outbound proposal dispatched: "${newMsg.snippet}..."`,
+            metadata: { threadId, messageId: newMsg.messageId }
+          }).catch(() => {});
+        }
+      } else {
         threadDoc.messages.push(newMsg);
         threadDoc.lastMessageAt = new Date();
         threadDoc.snippet = newMsg.snippet;
         if (subject && !threadDoc.subject) threadDoc.subject = subject;
+
+        // Update Outreach CRM record on follow-up
+        let outreachDoc = threadDoc.outreachId ? await Outreach.findById(threadDoc.outreachId) : null;
+        if (!outreachDoc && threadDoc.companyId) {
+          outreachDoc = await Outreach.findOne({ companyId: threadDoc.companyId });
+        }
+
+        if (outreachDoc) {
+          if (existingOutboundCount === 1) {
+            if (outreachDoc.status === "WAITING FOR REPLY" || outreachDoc.status === "SENT") {
+              outreachDoc.status = "FOLLOW-UP 1";
+            }
+            outreachDoc.followUpCount = 1;
+            outreachDoc.nextFollowUpAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            outreachDoc.notes = `Follow-up 1 sent`;
+          } else {
+            if (outreachDoc.status === "WAITING FOR REPLY" || outreachDoc.status === "SENT" || outreachDoc.status === "FOLLOW-UP 1") {
+              outreachDoc.status = "FOLLOW-UP 2";
+            }
+            outreachDoc.followUpCount = 2;
+            outreachDoc.nextFollowUpAt = null; // Max 3 messages reached
+            outreachDoc.notes = `Follow-up 2 sent (3/3 sent - limit reached)`;
+          }
+          outreachDoc.lastContactedAt = new Date();
+          outreachDoc.threadId = threadId;
+          await outreachDoc.save().catch(() => null);
+          threadDoc.outreachId = outreachDoc._id;
+        }
+
         await threadDoc.save();
+        await threadDoc.populate("companyId");
+        if (threadDoc.outreachId) {
+          await threadDoc.populate("outreachId");
+        }
 
         if (threadDoc.outreachId) {
-          await Outreach.findByIdAndUpdate(threadDoc.outreachId, {
-            lastContactedAt: new Date(),
-            notes: `Outbound reply sent on ${new Date().toLocaleDateString()}`
-          });
-
           await OutreachEvent.create({
             outreachId: threadDoc.outreachId,
             companyId: threadDoc.companyId,
@@ -524,6 +817,85 @@ const sendThreadReply = async (req, res) => {
             metadata: { threadId, messageId: newMsg.messageId }
           }).catch(() => {});
         }
+      }
+    } else {
+      // In-memory fallback mode
+      const { defaultThreads, defaultCompanies, defaultOutreaches, defaultTeamMembers } = require("../services/seedDataService");
+      let existing = defaultThreads.find(t => t.threadId === threadId);
+      let comp = defaultCompanies.find(c => String(c._id) === String(companyId) || String(c.id) === String(companyId));
+      if (!comp && threadId.startsWith("thread_")) {
+        const idPart = threadId.replace(/^thread_comp_/, "").replace(/^thread_/, "");
+        comp = defaultCompanies.find(c => String(c._id) === String(idPart) || String(c.id) === String(idPart));
+      }
+      if (!comp) comp = defaultCompanies[0];
+
+      // Update or create Outreach CRM record in-memory
+      let out = defaultOutreaches.find(o => String(o.companyId?._id || o.companyId?.id || o.companyId) === String(comp._id || comp.id));
+      if (!out) {
+        out = {
+          _id: `out_${comp._id || comp.id || Date.now()}`,
+          id: `out_${comp._id || comp.id || Date.now()}`,
+          companyId: comp,
+          memberId: defaultTeamMembers[0],
+          status: existingOutboundCount === 0 ? "WAITING FOR REPLY" : existingOutboundCount === 1 ? "FOLLOW-UP 1" : "FOLLOW-UP 2",
+          followUpCount: existingOutboundCount,
+          nextFollowUpAt: existingOutboundCount < 2 ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) : null,
+          lastContactedAt: new Date(),
+          threadId: threadId,
+          notes: existingOutboundCount === 0
+            ? `Outbound proposal sent to ${comp.name || comp.company}`
+            : existingOutboundCount === 1
+            ? `Follow-up 1 sent to ${comp.name || comp.company}`
+            : `Follow-up 2 sent to ${comp.name || comp.company} (3/3 sent - limit reached)`
+        };
+        defaultOutreaches.unshift(out);
+      } else {
+        if (existingOutboundCount === 0) {
+          if (out.status === "DRAFT" || out.status === "APPROVED") {
+            out.status = "WAITING FOR REPLY";
+          }
+          out.followUpCount = 0;
+          out.nextFollowUpAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+          out.notes = `Outbound proposal sent to ${comp.name || comp.company}`;
+        } else if (existingOutboundCount === 1) {
+          if (out.status === "WAITING FOR REPLY" || out.status === "SENT") {
+            out.status = "FOLLOW-UP 1";
+          }
+          out.followUpCount = 1;
+          out.nextFollowUpAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+          out.notes = `Follow-up 1 sent to ${comp.name || comp.company}`;
+        } else {
+          if (out.status === "WAITING FOR REPLY" || out.status === "SENT" || out.status === "FOLLOW-UP 1") {
+            out.status = "FOLLOW-UP 2";
+          }
+          out.followUpCount = 2;
+          out.nextFollowUpAt = null;
+          out.notes = `Follow-up 2 sent to ${comp.name || comp.company} (3/3 sent - limit reached)`;
+        }
+        out.lastContactedAt = new Date();
+        out.threadId = threadId;
+      }
+
+      if (!existing) {
+        existing = {
+          threadId,
+          companyId: comp,
+          outreachId: out,
+          subject: subject || (comp ? `Partnering with HackFest 2026: ${comp.name || comp.company} Sponsorship` : "Outreach Discussion"),
+          snippet: newMsg.snippet,
+          messages: [newMsg],
+          lastMessageAt: new Date(),
+          suggestedLabel: "PENDING_CLASSIFICATION",
+          confidence: "HIGH"
+        };
+        defaultThreads.unshift(existing);
+        threadDoc = existing;
+      } else {
+        existing.messages.push(newMsg);
+        existing.lastMessageAt = new Date();
+        existing.snippet = newMsg.snippet;
+        existing.outreachId = out;
+        threadDoc = existing;
       }
     }
 
@@ -555,7 +927,7 @@ const sendThreadReply = async (req, res) => {
 const simulateThreadReply = async (req, res) => {
   try {
     const threadId = req.params.threadId;
-    const { replyText, sponsorEmail, sponsorName, sentiment = "auto" } = req.body || {};
+    const { replyText, sponsorEmail, sponsorName, sentiment = "auto", companyId = null } = req.body || {};
 
     if (!replyText || !replyText.trim()) {
       return res.status(400).json({ success: false, message: "replyText is required" });
@@ -564,6 +936,7 @@ const simulateThreadReply = async (req, res) => {
     const { GmailThread } = require("../models/gmailThread");
     const { Outreach } = require("../models/outreach");
     const OutreachEvent = require("../models/outreachEvent");
+    const Company = require("../models/company");
     const { classifyReplyWithAI } = require("../services/gmailService");
     const serverCache = require("../services/cacheService");
     const mongoose = require("mongoose");
@@ -603,7 +976,33 @@ const simulateThreadReply = async (req, res) => {
     let threadDoc = null;
     if (mongoose.connection.readyState === 1) {
       threadDoc = await GmailThread.findOne({ threadId });
-      if (threadDoc) {
+
+      if (!threadDoc) {
+        let cId = companyId;
+        if (!cId && threadId.startsWith("thread_")) {
+          cId = threadId.replace(/^thread_comp_/, "").replace(/^thread_/, "");
+        }
+        let comp = null;
+        if (cId && mongoose.Types.ObjectId.isValid(cId)) {
+          comp = await Company.findById(cId);
+        }
+        let outreachDoc = comp ? await Outreach.findOne({ companyId: comp._id }) : null;
+
+        threadDoc = new GmailThread({
+          threadId,
+          companyId: comp ? comp._id : null,
+          outreachId: outreachDoc ? outreachDoc._id : null,
+          subject: (comp ? `Partnering with HackFest 2026: ${comp.name} Sponsorship` : "Outreach Discussion"),
+          snippet: newMsg.snippet,
+          messages: [newMsg],
+          lastMessageAt: new Date(),
+          suggestedLabel: classification.suggestedLabel,
+          confidence: classification.confidence,
+          classificationReason: classification.reason
+        });
+        await threadDoc.save();
+        await threadDoc.populate("companyId");
+      } else {
         threadDoc.messages.push(newMsg);
         threadDoc.lastMessageAt = new Date();
         threadDoc.snippet = newMsg.snippet;
@@ -611,22 +1010,51 @@ const simulateThreadReply = async (req, res) => {
         threadDoc.confidence = classification.confidence;
         threadDoc.classificationReason = classification.reason;
         await threadDoc.save();
+        await threadDoc.populate("companyId");
+      }
 
-        if (threadDoc.outreachId) {
-          await Outreach.findByIdAndUpdate(threadDoc.outreachId, {
-            lastReplyAt: new Date(),
-            status: classification.suggestedLabel === "DECLINED" ? "DECLINED" : "WAITING FOR REPLY",
-            notes: `Sponsor replied: "${newMsg.snippet}..."`
-          });
+      if (threadDoc.outreachId) {
+        await Outreach.findByIdAndUpdate(threadDoc.outreachId, {
+          lastReplyAt: new Date(),
+          status: classification.suggestedLabel === "DECLINED" ? "DECLINED" : "WAITING FOR REPLY",
+          notes: `Sponsor replied: "${newMsg.snippet}..."`
+        });
 
-          await OutreachEvent.create({
-            outreachId: threadDoc.outreachId,
-            companyId: threadDoc.companyId,
-            eventType: "REPLY_RECEIVED",
-            description: `Inbound reply simulated: "${newMsg.snippet}..."`,
-            metadata: { threadId, suggestedLabel: classification.suggestedLabel }
-          }).catch(() => {});
-        }
+        await OutreachEvent.create({
+          outreachId: threadDoc.outreachId,
+          companyId: threadDoc.companyId,
+          eventType: "REPLY_RECEIVED",
+          description: `Inbound reply simulated: "${newMsg.snippet}..."`,
+          metadata: { threadId, suggestedLabel: classification.suggestedLabel }
+        }).catch(() => {});
+      }
+    } else {
+      // In-memory fallback mode
+      const { defaultThreads, defaultCompanies } = require("../services/seedDataService");
+      let existing = defaultThreads.find(t => t.threadId === threadId);
+      if (!existing) {
+        const comp = defaultCompanies.find(c => c._id === companyId || c.id === companyId) || defaultCompanies[0];
+        existing = {
+          threadId,
+          companyId: comp,
+          subject: "Outreach Discussion",
+          snippet: newMsg.snippet,
+          messages: [newMsg],
+          lastMessageAt: new Date(),
+          suggestedLabel: classification.suggestedLabel,
+          confidence: classification.confidence,
+          classificationReason: classification.reason
+        };
+        defaultThreads.unshift(existing);
+        threadDoc = existing;
+      } else {
+        existing.messages.push(newMsg);
+        existing.lastMessageAt = new Date();
+        existing.snippet = newMsg.snippet;
+        existing.suggestedLabel = classification.suggestedLabel;
+        existing.confidence = classification.confidence;
+        existing.classificationReason = classification.reason;
+        threadDoc = existing;
       }
     }
 
@@ -749,8 +1177,23 @@ const confirmReplyHandler = async (req, res) => {
       meetingScheduledAt = null
     } = req.body || {};
 
-    const validLabels = ["INTERESTED", "DECLINED", "NO_REPLY", "OTHER"];
-    if (!label || !validLabels.includes(label)) {
+    let normalizedLabel = String(label || "").trim().toUpperCase();
+    if (["APPROVED", "APPROVE", "INTERESTED", "POSITIVE", "ACCEPTED"].includes(normalizedLabel)) {
+      normalizedLabel = "INTERESTED";
+    } else if (["DENIED", "DENY", "DECLINED", "DECLINE", "REJECTED"].includes(normalizedLabel)) {
+      normalizedLabel = "DECLINED";
+    } else if (["OUTOFOFFICE", "OUT_OF_OFFICE", "OUT OF OFFICE", "OOO"].includes(normalizedLabel)) {
+      normalizedLabel = "OUT OF OFFICE";
+    } else if (["OTHER"].includes(normalizedLabel)) {
+      normalizedLabel = "OTHER";
+    } else if (["REPLY", "REPLIED", "WAITING FOR REPLY", "WAITING_FOR_REPLY"].includes(normalizedLabel)) {
+      normalizedLabel = "WAITING FOR REPLY";
+    } else if (["NO_REPLY", "NO REPLY", "NOREPLY"].includes(normalizedLabel)) {
+      normalizedLabel = "NO_REPLY";
+    }
+
+    const validLabels = ["INTERESTED", "DECLINED", "NO_REPLY", "OTHER", "OUT OF OFFICE", "WAITING FOR REPLY"];
+    if (!normalizedLabel || !validLabels.includes(normalizedLabel)) {
       return res.status(400).json({
         success: false,
         message: `Invalid label '${label}'. Allowed: ${validLabels.join(", ")}`
@@ -761,23 +1204,7 @@ const confirmReplyHandler = async (req, res) => {
     const { Outreach } = require("../models/outreach");
     const { updateOutreachStatus } = require("../services/outreachService");
 
-    // 1. Update GmailThread record
-    let threadDoc = null;
-    if (threadId && mongoose.connection.readyState === 1) {
-      try {
-        threadDoc = await GmailThread.findOneAndUpdate(
-          { threadId },
-          {
-            confirmedLabel: label,
-            confirmedBy,
-            confirmedAt: new Date()
-          },
-          { new: true, upsert: true }
-        );
-      } catch (_) {}
-    }
-
-    // 2. Find and update Outreach record
+    // 1. Find Outreach record
     let outreach = null;
     if (mongoose.connection.readyState === 1) {
       if (outreachId && mongoose.Types.ObjectId.isValid(outreachId)) {
@@ -786,36 +1213,90 @@ const confirmReplyHandler = async (req, res) => {
       if (!outreach && threadId) {
         outreach = await Outreach.findOne({ threadId });
       }
+      if (!outreach && req.body?.companyId) {
+        outreach = await Outreach.findOne({ companyId: req.body.companyId });
+      }
     }
 
+    // 2. Update Outreach status based on normalized reply outcome
     if (outreach) {
       let targetStatus = "WAITING FOR REPLY";
-      if (label === "INTERESTED") {
+      if (normalizedLabel === "INTERESTED") {
         targetStatus = meetingLink || meetingScheduledAt ? "MEETING" : "INTERESTED";
-      } else if (label === "DECLINED") {
+      } else if (normalizedLabel === "DECLINED") {
         targetStatus = "DECLINED";
-      } else if (label === "NO_REPLY") {
+      } else if (normalizedLabel === "OUT OF OFFICE") {
+        targetStatus = "OUT OF OFFICE";
+      } else if (normalizedLabel === "NO_REPLY") {
         targetStatus = "NO REPLY";
-      } else if (label === "OTHER") {
+      } else if (normalizedLabel === "WAITING FOR REPLY" || normalizedLabel === "OTHER") {
         targetStatus = "WAITING FOR REPLY";
       }
 
       await updateOutreachStatus(outreach, targetStatus, {
         threadId: threadId || outreach.threadId,
-        reason: notes || `Sponsor reply confirmed as: ${label}`,
+        reason: notes || `Sponsor reply recorded: ${normalizedLabel}`,
         meetingLink,
         meetingScheduledAt,
         metadata: {
           confirmedBy,
-          label,
+          label: normalizedLabel,
           notes
         }
       });
     }
 
+    // 3. Update or Upsert GmailThread record & append sponsor reply message
+    const resolvedThreadId = threadId || outreach?.threadId || `thread_${Date.now()}`;
+    let threadDoc = null;
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const updatePayload = {
+          threadId: resolvedThreadId,
+          confirmedLabel: normalizedLabel,
+          confirmedBy,
+          confirmedAt: new Date()
+        };
+        if (outreach?.companyId) updatePayload.companyId = outreach.companyId;
+        if (outreach?._id) updatePayload.outreachId = outreach._id;
+
+        threadDoc = await GmailThread.findOneAndUpdate(
+          { threadId: resolvedThreadId },
+          updatePayload,
+          { new: true, upsert: true }
+        );
+
+        if (notes && notes.trim() && threadDoc) {
+          const replySnippet = notes.slice(0, 120);
+          await GmailThread.findOneAndUpdate(
+            { threadId: resolvedThreadId },
+            {
+              lastMessageAt: new Date(),
+              snippet: replySnippet,
+              $push: {
+                messages: {
+                  messageId: `msg_sponsor_reply_${Date.now()}`,
+                  from: "Sponsor Representative <sponsor@company.com>",
+                  to: "Het Savani <sponsorships@hackathon.club>",
+                  date: new Date(),
+                  snippet: replySnippet,
+                  body: notes.trim(),
+                  isFromSponsor: true
+                }
+              }
+            }
+          );
+        }
+      } catch (_) {}
+    }
+
+    serverCache.invalidateTag("threads");
+    serverCache.invalidateTag("outreach");
+    serverCache.invalidateTag("stats");
+
     return res.status(200).json({
       success: true,
-      message: `Reply outcome '${label}' confirmed successfully. Outreach updated.`,
+      message: `Reply outcome '${normalizedLabel}' confirmed successfully. Outreach status updated to ${outreach?.status || normalizedLabel}.`,
       data: {
         thread: threadDoc,
         outreach: outreach
@@ -824,6 +1305,7 @@ const confirmReplyHandler = async (req, res) => {
               status: outreach.status,
               followUpCount: outreach.followUpCount,
               closedReason: outreach.closedReason,
+              nextFollowUpAt: outreach.nextFollowUpAt,
               meetingLink: outreach.meetingLink
             }
           : null

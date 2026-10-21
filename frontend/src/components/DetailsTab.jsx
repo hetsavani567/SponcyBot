@@ -1,9 +1,30 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, safeFetchJson } from '../services/api.js';
 
+// Helper to generate personalized sponsorship outreach proposal ready for chat
+const generatePreparedProposal = (company) => {
+  if (!company) return '';
+  const compName = company.name || company.company || 'there';
+  const contact = company.contactName ? company.contactName.split(' ')[0] : `${compName} Team`;
+  const tier = company.recommendedTier || 'Silver';
+  const askText = company.recommendedAsk === 'infra'
+    ? 'cloud infrastructure credits, developer tooling access, and workshop challenge bounties'
+    : company.recommendedAsk === 'goodies'
+    ? 'participant swag hampers, student vouchers, and prize bundles'
+    : `${tier} tier cash sponsorship and talent hiring engagement`;
+
+  let customAngle = company.strategy || company.whyGoodSponsor || company.shortPitch || '';
+  if (!customAngle) {
+    customAngle = `Given ${compName}'s strong presence in ${company.industry || company.category || 'technology'}, our 500+ builders would love to build with your tools and APIs.`;
+  }
+
+  return `Hi ${contact},\n\nWe are organizing HackFest 2026 at ACM NIT Surat, bringing together 500+ top collegiate developers and builders.\n\n${customAngle}\n\nWe would love to feature ${compName} as our ${tier} Sponsor for HackFest 2026. We are looking to collaborate on ${askText}.\n\nCould we connect for a brief 10-minute sync this week to explore this?\n\nBest regards,\nHet Savani\nSponsorship Lead · HackFest 2026`;
+};
+
 export default function DetailsTab({
   selectedCompanyId,
   selectedThreadId,
+  companies = [],
   onShowToast,
   onRefreshStats,
   onSwitchTab
@@ -19,12 +40,12 @@ export default function DetailsTab({
 
   // Active Company (linked to selected thread or selectedCompanyId)
   const [activeCompany, setActiveCompany] = useState(null);
-  const [loadingCompany, setLoadingCompany] = useState(false);
 
   // UI Tabs & Filters
   const [activePanelTab, setActivePanelTab] = useState('conversation'); // 'conversation' | 'intelligence'
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL'); // 'ALL' | 'INTERESTED' | 'WAITING' | 'MEETING' | 'DECLINED'
+  const [showSponsorPicker, setShowSponsorPicker] = useState(false);
 
   // Composer & Actions
   const [replyBody, setReplyBody] = useState('');
@@ -38,34 +59,71 @@ export default function DetailsTab({
   const [simSentiment, setSimSentiment] = useState('interested');
   const [simulating, setSimulating] = useState(false);
 
+  // Helper to create an in-memory prepared thread structure for any sponsor
+  const createPreparedThread = useCallback((comp) => {
+    if (!comp) return null;
+    const cId = comp._id || comp.id;
+    return {
+      threadId: `thread_${cId}`,
+      companyId: comp,
+      outreachId: null,
+      emailId: null,
+      subject: `Partnering with HackFest 2026: ${comp.name || comp.company} Sponsorship`,
+      snippet: `⚡ Prepared outreach chat for ${comp.name || comp.company}...`,
+      messages: [],
+      lastMessageAt: new Date(),
+      suggestedLabel: 'PENDING_CLASSIFICATION',
+      classificationReason: 'New outreach chat prepared for sponsor.',
+      confidence: 'HIGH',
+      isPrepared: true
+    };
+  }, []);
+
   // Fetch all threads from backend
-  const fetchAllThreads = useCallback(async (preferredThreadId = null) => {
+  const fetchAllThreads = useCallback(async (preferredThreadId = null, targetCompanyId = null) => {
     setLoadingThreads(true);
     try {
       const data = await api.getThreads();
-      const list = Array.isArray(data) ? data : [];
-      setThreads(list);
+      let list = Array.isArray(data) ? [...data] : [];
 
-      // Auto-select thread logic:
-      // 1. If preferredThreadId was given, select it
-      // 2. If selectedThreadId prop exists, select it
-      // 3. If selectedCompanyId prop exists, find thread linked to company
-      // 4. Fallback to first thread in list
+      const effCompanyId = targetCompanyId || selectedCompanyId;
       let targetId = preferredThreadId || selectedThreadId;
 
-      if (!targetId && selectedCompanyId && list.length > 0) {
+      if (effCompanyId) {
         const matching = list.find((t) => {
           const cId = t.companyId?._id || t.companyId?.id || t.companyId;
-          return String(cId) === String(selectedCompanyId);
+          return String(cId) === String(effCompanyId);
         });
-        if (matching) targetId = matching.threadId;
+
+        if (matching) {
+          targetId = matching.threadId;
+          setActiveThreadId(matching.threadId);
+          if (matching.companyId && typeof matching.companyId === 'object') {
+            setActiveCompany(matching.companyId);
+          }
+          setActivePanelTab('conversation');
+        } else {
+          // Sponsor does not have a thread yet -> prepare chat!
+          const comp = companies.find(c => String(c._id || c.id) === String(effCompanyId)) ||
+            (await api.getCompany(effCompanyId).catch(() => null));
+
+          if (comp) {
+            const prepared = createPreparedThread(comp);
+            list = [prepared, ...list];
+            targetId = prepared.threadId;
+            setActiveThreadId(prepared.threadId);
+            setActiveCompany(comp);
+            setThreadDetail(prepared);
+            setReplyBody(generatePreparedProposal(comp));
+            setActivePanelTab('conversation');
+          }
+        }
       }
+
+      setThreads(list);
 
       if (!targetId && list.length > 0) {
         targetId = list[0].threadId;
-      }
-
-      if (targetId) {
         setActiveThreadId(targetId);
       }
     } catch (err) {
@@ -73,54 +131,96 @@ export default function DetailsTab({
     } finally {
       setLoadingThreads(false);
     }
-  }, [selectedThreadId, selectedCompanyId, onShowToast]);
+  }, [selectedThreadId, selectedCompanyId, companies, createPreparedThread, onShowToast]);
 
   // Initial load
   useEffect(() => {
     fetchAllThreads();
   }, [fetchAllThreads]);
 
-  // When selectedCompanyId prop changes externally
+  // When selectedCompanyId prop changes externally (e.g. user clicked Inspect on a sponsor)
   useEffect(() => {
-    if (selectedCompanyId && threads.length > 0) {
-      const matching = threads.find((t) => {
-        const cId = t.companyId?._id || t.companyId?.id || t.companyId;
-        return String(cId) === String(selectedCompanyId);
-      });
-      if (matching) {
-        setActiveThreadId(matching.threadId);
+    if (!selectedCompanyId) return;
+
+    const matching = threads.find((t) => {
+      const cId = t.companyId?._id || t.companyId?.id || t.companyId;
+      return String(cId) === String(selectedCompanyId);
+    });
+
+    if (matching) {
+      setActiveThreadId(matching.threadId);
+      if (matching.companyId && typeof matching.companyId === 'object') {
+        setActiveCompany(matching.companyId);
+      }
+      setActivePanelTab('conversation');
+      if (!matching.messages || matching.messages.length === 0) {
+        setReplyBody(generatePreparedProposal(matching.companyId));
+      }
+    } else {
+      const comp = companies.find(c => String(c._id || c.id) === String(selectedCompanyId));
+      const applyPrepared = (compData) => {
+        if (!compData) return;
+        const prepared = createPreparedThread(compData);
+        setThreads(prev => {
+          const without = prev.filter(t => t.threadId !== prepared.threadId);
+          return [prepared, ...without];
+        });
+        setActiveThreadId(prepared.threadId);
+        setActiveCompany(compData);
+        setThreadDetail(prepared);
+        setReplyBody(generatePreparedProposal(compData));
+        setActivePanelTab('conversation');
+      };
+
+      if (comp) {
+        applyPrepared(comp);
       } else {
-        // Fetch company directly if no thread yet
-        api.getCompany(selectedCompanyId).then((comp) => {
-          if (comp) setActiveCompany(comp);
-        }).catch(() => {});
+        api.getCompany(selectedCompanyId).then(applyPrepared).catch(() => {});
       }
     }
-  }, [selectedCompanyId, threads]);
+  }, [selectedCompanyId, companies, threads, createPreparedThread]);
 
   // Load single thread detail whenever activeThreadId changes
   const loadActiveThread = useCallback(async (threadId) => {
     if (!threadId) return;
+
+    // If it's a prepared thread in memory with no saved messages yet, don't overwrite with 404
+    const existing = threads.find(t => t.threadId === threadId);
+    if (existing && existing.isPrepared && (!existing.messages || existing.messages.length === 0)) {
+      setThreadDetail(existing);
+      if (existing.companyId && typeof existing.companyId === 'object') {
+        setActiveCompany(existing.companyId);
+        setReplyBody(prev => prev || generatePreparedProposal(existing.companyId));
+      }
+      return;
+    }
+
     setLoadingDetail(true);
     try {
       const threadData = await api.getThread(threadId);
       if (threadData) {
         setThreadDetail(threadData);
 
-        // Resolve company details
         if (threadData.companyId && typeof threadData.companyId === 'object' && threadData.companyId.name) {
           setActiveCompany(threadData.companyId);
         } else if (threadData.companyId) {
           const comp = await api.getCompany(threadData.companyId);
-          setActiveCompany(comp);
+          if (comp) setActiveCompany(comp);
+        }
+
+        if (!threadData.messages || threadData.messages.length === 0) {
+          const compObj = threadData.companyId && typeof threadData.companyId === 'object' ? threadData.companyId : activeCompany;
+          if (compObj) {
+            setReplyBody(prev => prev || generatePreparedProposal(compObj));
+          }
         }
       }
     } catch (err) {
-      onShowToast(`Failed to load thread detail: ${err.message}`, 'error');
+      console.warn('[DetailsTab] Thread detail notice:', err.message);
     } finally {
       setLoadingDetail(false);
     }
-  }, [onShowToast]);
+  }, [threads, activeCompany]);
 
   useEffect(() => {
     if (activeThreadId) {
@@ -139,10 +239,10 @@ export default function DetailsTab({
       const matchesSearch = !q || compName.toLowerCase().includes(q) || subject.toLowerCase().includes(q) || snippet.toLowerCase().includes(q);
       if (!matchesSearch) return false;
 
-      const status = (t.outreachId?.status || t.suggestedLabel || '').toUpperCase();
+      const status = (t.isPrepared ? 'PREPARED' : t.outreachId?.status || t.suggestedLabel || '').toUpperCase();
       if (filterStatus === 'ALL') return true;
       if (filterStatus === 'INTERESTED') return status.includes('INTEREST') || t.suggestedLabel === 'INTERESTED';
-      if (filterStatus === 'WAITING') return status.includes('WAITING') || status.includes('FOLLOW');
+      if (filterStatus === 'WAITING') return status.includes('WAITING') || status.includes('FOLLOW') || status.includes('PREPARED');
       if (filterStatus === 'MEETING') return status.includes('MEETING');
       if (filterStatus === 'DECLINED') return status.includes('DECLINE');
       return true;
@@ -164,29 +264,71 @@ export default function DetailsTab({
       setReplyBody(
         `Hi ${compName} Partnerships Team,\n\nChecking in to see if you had a moment to review our earlier proposal regarding the HackFest 2026 sponsor tracks.\n\nWe would be thrilled to have your participation.\n\nBest regards,\nHet Savani`
       );
+    } else if (type === 'proposal') {
+      setReplyBody(generatePreparedProposal(activeCompany));
     }
   };
+
+  // Count outbound messages sent by organizer to enforce 3-message limit
+  const outboundMessagesCount = useMemo(() => {
+    const msgs = threadDetail?.messages || [];
+    return msgs.filter((m) => !m.isFromSponsor).length;
+  }, [threadDetail?.messages]);
+  const isMessageLimitReached = outboundMessagesCount >= 3;
 
   // Send outbound reply
   const handleSendReply = async (e) => {
     e.preventDefault();
     if (!replyBody.trim() || !activeThreadId) return;
 
+    if (isMessageLimitReached) {
+      onShowToast('Outreach limit reached: Maximum 3 messages allowed per sponsor thread to prevent spam.', 'warning');
+      return;
+    }
+
     setSendingReply(true);
     try {
       const recipientEmail = activeCompany?.contactEmail || 'sponsor@company.com';
+      const companyId = activeCompany?._id || activeCompany?.id || null;
       const { res, data } = await api.sendThreadReply(activeThreadId, {
         body: replyBody.trim(),
-        subject: threadDetail?.subject || 'Re: Sponsorship Outreach',
+        subject: threadDetail?.subject || `Partnering with HackFest 2026: ${activeCompany?.name || 'Sponsor'} Sponsorship`,
         recipientEmail,
-        senderName: 'Het Savani'
+        senderName: 'Het Savani',
+        companyId
       });
 
       if (res.ok) {
-        onShowToast('Outbound reply sent successfully!', 'success');
+        onShowToast(`Outreach message sent to ${activeCompany?.name || 'sponsor'}! Tracked in Outreach CRM.`, 'success');
         setReplyBody('');
-        await loadActiveThread(activeThreadId);
-        fetchAllThreads(activeThreadId);
+
+        // Invalidate CRM cache so CRM page reflects row immediately
+        api.invalidateCache('/outreach');
+        api.invalidateCache('/gmail/stats');
+        api.invalidateCache('/api/bootstrap');
+
+        const updatedThread = data?.data?.thread;
+        const newMsg = data?.data?.message;
+
+        if (updatedThread) {
+          setThreadDetail(updatedThread);
+          setThreads(prev => prev.map(t => t.threadId === activeThreadId ? { ...t, ...updatedThread, isPrepared: false } : t));
+        } else if (newMsg) {
+          setThreadDetail(prev => ({
+            ...prev,
+            isPrepared: false,
+            messages: [...(prev?.messages || []), newMsg],
+            lastMessageAt: new Date()
+          }));
+          setThreads(prev => prev.map(t => t.threadId === activeThreadId ? {
+            ...t,
+            isPrepared: false,
+            messages: [...(t.messages || []), newMsg],
+            lastMessageAt: new Date(),
+            snippet: newMsg.snippet
+          } : t));
+        }
+
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data.message || 'Failed to send reply', 'error');
@@ -203,25 +345,53 @@ export default function DetailsTab({
     if (!activeThreadId) return;
     const textToSend = simText.trim() || (
       simSentiment === 'interested'
-        ? `Hey Het, thanks for reaching out! We'd love to partner as a Gold Sponsor and host a workshop track for your 500 hackers. Let's schedule a 15-min call to lock in details: https://meet.google.com/abc-defg-hij`
+        ? `Hey Het, thanks for reaching out! We'd love to partner as a ${activeCompany?.recommendedTier || 'Gold'} Sponsor and host a workshop track for your 500 hackers. Let's schedule a 15-min call to lock in details: https://meet.google.com/abc-defg-hij`
         : `Hi Het, thank you for considering us. Unfortunately our university event budget is fully allocated for this semester so we must pass.`
     );
 
     setSimulating(true);
     try {
+      const companyId = activeCompany?._id || activeCompany?.id || null;
       const { res, data } = await api.simulateThreadReply(activeThreadId, {
         replyText: textToSend,
         sentiment: simSentiment,
         sponsorName: activeCompany?.contactName || `${activeCompany?.name || 'Sponsor'} Team`,
-        sponsorEmail: activeCompany?.contactEmail || 'sponsor@company.com'
+        sponsorEmail: activeCompany?.contactEmail || 'sponsor@company.com',
+        companyId
       });
 
       if (res.ok) {
         onShowToast(`Simulated sponsor reply recorded! AI classified as ${data.data?.classification?.suggestedLabel || 'INTERESTED'}`, 'success');
         setSimText('');
         setShowSimulateBox(false);
-        await loadActiveThread(activeThreadId);
-        fetchAllThreads(activeThreadId);
+
+        const updatedThread = data?.data?.thread;
+        const newMsg = data?.data?.message;
+        const classification = data?.data?.classification;
+
+        if (updatedThread) {
+          setThreadDetail(updatedThread);
+          setThreads(prev => prev.map(t => t.threadId === activeThreadId ? { ...t, ...updatedThread, isPrepared: false } : t));
+        } else if (newMsg) {
+          setThreadDetail(prev => ({
+            ...prev,
+            isPrepared: false,
+            messages: [...(prev?.messages || []), newMsg],
+            suggestedLabel: classification?.suggestedLabel || 'INTERESTED',
+            confidence: classification?.confidence || 'HIGH',
+            classificationReason: classification?.reason || '',
+            lastMessageAt: new Date()
+          }));
+          setThreads(prev => prev.map(t => t.threadId === activeThreadId ? {
+            ...t,
+            isPrepared: false,
+            messages: [...(t.messages || []), newMsg],
+            suggestedLabel: classification?.suggestedLabel || 'INTERESTED',
+            lastMessageAt: new Date(),
+            snippet: newMsg.snippet
+          } : t));
+        }
+
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data.message || 'Simulation failed', 'error');
@@ -373,6 +543,77 @@ export default function DetailsTab({
         <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-col h-[750px] shadow-sm overflow-hidden">
           {/* Search & Filter Header */}
           <div className="p-3 border-b border-slate-800 space-y-2 bg-slate-900/90 sticky top-0 z-10">
+            {/* Quick Sponsor Chat Launcher */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSponsorPicker(!showSponsorPicker)}
+                className="w-full text-xs py-1.5 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 transition flex items-center justify-between font-medium group"
+              >
+                <span className="flex items-center space-x-1.5">
+                  <span>💬</span>
+                  <span>+ Start Chat with Sponsor...</span>
+                </span>
+                <span className="text-[10px] text-emerald-400 group-hover:text-white font-mono">
+                  {companies.length} Available ▾
+                </span>
+              </button>
+
+              {showSponsorPicker && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-30 max-h-56 overflow-y-auto divide-y divide-slate-800/80 p-1">
+                  <div className="p-1.5 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                    Select Sponsor Company:
+                  </div>
+                  {companies.map((c) => {
+                    const cId = c._id || c.id;
+                    const cTier = c.recommendedTier || 'Silver';
+                    return (
+                      <button
+                        key={cId}
+                        type="button"
+                        onClick={() => {
+                          setShowSponsorPicker(false);
+                          const matching = threads.find((t) => {
+                            const tCompId = t.companyId?._id || t.companyId?.id || t.companyId;
+                            return String(tCompId) === String(cId);
+                          });
+
+                          if (matching) {
+                            setActiveThreadId(matching.threadId);
+                            setActiveCompany(matching.companyId || c);
+                            setActivePanelTab('conversation');
+                            if (!matching.messages || matching.messages.length === 0) {
+                              setReplyBody(generatePreparedProposal(c));
+                            }
+                          } else {
+                            const prepared = createPreparedThread(c);
+                            setThreads((prev) => {
+                              const without = prev.filter((t) => t.threadId !== prepared.threadId);
+                              return [prepared, ...without];
+                            });
+                            setActiveThreadId(prepared.threadId);
+                            setActiveCompany(c);
+                            setThreadDetail(prepared);
+                            setReplyBody(generatePreparedProposal(c));
+                            setActivePanelTab('conversation');
+                          }
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-slate-800 text-xs text-slate-200 flex items-center justify-between transition"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-semibold text-white truncate">{c.name || c.company}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{c.contactEmail || 'No email'}</p>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-slate-900 text-slate-300 border border-slate-700 shrink-0">
+                          {cTier} · {c.score || 0}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="relative">
               <input
                 type="text"
@@ -434,7 +675,8 @@ export default function DetailsTab({
                 const compName = comp.name || comp.company || 'Sponsor';
                 const compTier = comp.recommendedTier || 'Silver';
                 const msgCount = (t.messages || []).length;
-                const status = t.outreachId?.status || 'WAITING FOR REPLY';
+                const isPrepared = Boolean(t.isPrepared);
+                const status = isPrepared ? 'READY TO SEND' : (t.outreachId?.status || t.suggestedLabel || 'WAITING FOR REPLY');
                 const isInterested = t.suggestedLabel === 'INTERESTED' || status === 'INTERESTED' || status === 'MEETING';
                 const isDeclined = t.suggestedLabel === 'DECLINED' || status === 'DECLINED';
 
@@ -443,7 +685,11 @@ export default function DetailsTab({
                     key={t.threadId}
                     onClick={() => {
                       setActiveThreadId(t.threadId);
-                      if (comp && comp._id) setActiveCompany(comp);
+                      if (comp && (comp._id || comp.id)) setActiveCompany(comp);
+                      if (isPrepared) {
+                        setThreadDetail(t);
+                        if (!replyBody) setReplyBody(generatePreparedProposal(comp));
+                      }
                     }}
                     className={`p-3 rounded-lg cursor-pointer transition relative text-left ${
                       isSelected
@@ -465,7 +711,7 @@ export default function DetailsTab({
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                        {formatRelativeTime(t.lastMessageAt || t.updatedAt)}
+                        {isPrepared ? 'Ready' : formatRelativeTime(t.lastMessageAt || t.updatedAt)}
                       </span>
                     </div>
 
@@ -476,23 +722,29 @@ export default function DetailsTab({
 
                     {/* Snippet */}
                     <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mb-2">
-                      {t.snippet || 'No message preview available.'}
+                      {isPrepared ? '⚡ Prepared proposal ready in composer. Click to chat...' : (t.snippet || 'No message preview available.')}
                     </p>
 
                     {/* Footer Tags */}
                     <div className="flex items-center justify-between text-[10px]">
                       <div className="flex items-center space-x-1">
-                        {isInterested && (
+                        {isPrepared && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-medium text-[9px] flex items-center space-x-1">
+                            <span>⚡</span>
+                            <span>Prepared Chat</span>
+                          </span>
+                        )}
+                        {!isPrepared && isInterested && (
                           <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium">
                             🤖 Interested
                           </span>
                         )}
-                        {isDeclined && (
+                        {!isPrepared && isDeclined && (
                           <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-medium">
                             Declined
                           </span>
                         )}
-                        {!isInterested && !isDeclined && (
+                        {!isPrepared && !isInterested && !isDeclined && (
                           <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
                             {status}
                           </span>
@@ -563,11 +815,27 @@ export default function DetailsTab({
                 <button
                   onClick={handleReResearch}
                   disabled={reResearching}
-                  className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition flex items-center space-x-1 disabled:opacity-50"
-                  title="Run live Tavily web intelligence"
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition flex items-center space-x-1.5 ${
+                    reResearching
+                      ? 'bg-purple-600/40 text-purple-200 border-purple-500/50 cursor-wait'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                  title="Run live Tavily web intelligence and Gemini scoring"
                 >
-                  <span className={reResearching ? 'animate-spin' : ''}>🔍</span>
-                  <span className="hidden sm:inline">{reResearching ? 'Researching...' : 'Refresh AI'}</span>
+                  {reResearching ? (
+                    <>
+                      <svg className="animate-spin h-3.5 w-3.5 text-purple-200 inline-block shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="font-semibold">Researching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🔍</span>
+                      <span>AI Research</span>
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -645,16 +913,21 @@ export default function DetailsTab({
                 <div>
                   <div className="flex items-center space-x-2">
                     <h2 className="text-sm font-bold text-white tracking-tight">
-                      {threadDetail.subject || 'Outreach Conversation'}
+                      {threadDetail.subject || `Partnering with HackFest 2026: ${activeCompany?.name || 'Sponsor'} Sponsorship`}
                     </h2>
                     <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${tierColor}`}>
                       {tier}
                     </span>
+                    {threadDetail.isPrepared && (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
+                        ⚡ Prepared Chat
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center space-x-3 text-xs text-slate-400 mt-0.5">
                     <span>🏢 {activeCompany?.name || 'Sponsor'}</span>
                     <span>·</span>
-                    <span>✉️ {activeCompany?.contactEmail || 'sponsor@company.com'}</span>
+                    <span>✉ {activeCompany?.contactEmail || 'sponsor@company.com'}</span>
                     <span>·</span>
                     <span className="font-mono text-[10px] text-slate-500">Thread: {threadDetail.threadId}</span>
                   </div>
@@ -703,26 +976,6 @@ export default function DetailsTab({
                   <p className="text-xs text-slate-300 leading-relaxed">
                     {threadDetail.classificationReason || 'AI analyzed sponsor reply intent.'}
                   </p>
-
-                  {/* 1-Click Human Decision Actions */}
-                  {!threadDetail.confirmedLabel && (
-                    <div className="flex items-center space-x-2 pt-1">
-                      <button
-                        onClick={() => handleConfirmOutcome('INTERESTED')}
-                        disabled={confirmingOutcome}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-lg font-semibold transition disabled:opacity-50 shadow-sm flex items-center space-x-1"
-                      >
-                        <span>✓ Confirm: Sponsor Interested & Book Meeting</span>
-                      </button>
-                      <button
-                        onClick={() => handleConfirmOutcome('DECLINED')}
-                        disabled={confirmingOutcome}
-                        className="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 text-white text-xs rounded-lg font-semibold transition disabled:opacity-50 flex items-center space-x-1"
-                      >
-                        <span>✕ Confirm: Declined (Close)</span>
-                      </button>
-                    </div>
-                  )}
                   {threadDetail.confirmedLabel && (
                     <div className="text-[11px] text-slate-400 pt-1 flex items-center space-x-1">
                       <span>✓ Human confirmed outcome:</span>
@@ -736,8 +989,39 @@ export default function DetailsTab({
               {/* Messages Chat Stream */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {!threadDetail.messages || threadDetail.messages.length === 0 ? (
-                  <div className="text-center py-16 text-slate-500 text-xs">
-                    No messages recorded in this thread yet. Compose an initial reply below.
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 my-auto">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shadow-lg shadow-emerald-500/10 animate-pulse">
+                      ⚡
+                    </div>
+                    <div className="max-w-md">
+                      <h3 className="text-base font-bold text-white tracking-tight">
+                        Outreach Chat Prepared for {activeCompany?.name || 'Sponsor'}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        A personalized sponsorship proposal has been generated based on their <strong>{tier} Tier</strong> fit score ({activeCompany?.score ?? 0}/100) and target ask.
+                      </p>
+                    </div>
+
+                    <div className="w-full max-w-lg bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-2">
+                        <span className="font-medium text-slate-400">Target Contact:</span>
+                        <span className="font-mono text-emerald-300 font-semibold">{activeCompany?.contactEmail || 'sponsorships@company.com'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-2">
+                        <span className="font-medium text-slate-400">Recommended Ask:</span>
+                        <span className="text-slate-200 font-medium">
+                          {activeCompany?.recommendedAsk === 'infra' ? '☁️ Cloud Credits & Dev Tools' : activeCompany?.recommendedAsk === 'goodies' ? '🎁 Swag & Prize Bundles' : '💰 Cash Bounty'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed italic pt-1">
+                        "{activeCompany?.strategy || activeCompany?.whyGoodSponsor || 'Pitch dedicated sponsor workshop track and developer recruiting engagement.'}"
+                      </p>
+                    </div>
+
+                    <p className="text-[11px] text-emerald-400/90 font-medium flex items-center space-x-1.5">
+                      <span>✍️</span>
+                      <span>Personalized proposal ready in composer below. Click 'Send Outreach ↗' to dispatch.</span>
+                    </p>
                   </div>
                 ) : (
                   threadDetail.messages.map((m, idx) => {
@@ -781,46 +1065,101 @@ export default function DetailsTab({
 
               {/* Reply Composer Bar */}
               <div className="p-3 border-t border-slate-800 bg-slate-950/70 space-y-2 shrink-0">
-                {/* Quick Helper Chips */}
-                <div className="flex items-center space-x-1.5 text-[11px] overflow-x-auto pb-1">
-                  <span className="text-slate-500 font-mono text-[10px]">✨ Quick AI Fill:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleInsertQuickTemplate('meeting')}
-                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0"
-                  >
-                    📅 Propose Meeting
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleInsertQuickTemplate('deck')}
-                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0"
-                  >
-                    📊 Send Prospectus
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleInsertQuickTemplate('followup')}
-                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0"
-                  >
-                    ⏳ Friendly Follow-up
-                  </button>
-                </div>
+                {/* 3-Message Quota Alert / Counter */}
+                {isMessageLimitReached ? (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm animate-in fade-in duration-200">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-base shrink-0">🔒</span>
+                      <div>
+                        <span className="font-bold text-amber-200">Outreach Quota Reached (3/3 Messages Sent):</span>
+                        <span className="text-slate-300 ml-1">
+                          You have sent the maximum 3 outreach messages allowed for this sponsor thread to prevent spam. This conversation is tracked in Outreach CRM.
+                        </span>
+                      </div>
+                    </div>
+                    {onSwitchTab && (
+                      <button
+                        type="button"
+                        onClick={() => onSwitchTab('outreach')}
+                        className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg font-medium text-[11px] whitespace-nowrap self-start sm:self-auto transition shadow-sm"
+                      >
+                        View in Outreach CRM ↗
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="flex items-center space-x-1.5 overflow-x-auto pb-0.5">
+                      <span className="text-slate-500 font-mono text-[10px]">✨ Quick AI Fill:</span>
+                      <button
+                        type="button"
+                        disabled={isMessageLimitReached}
+                        onClick={() => handleInsertQuickTemplate('proposal')}
+                        className="px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 transition shrink-0 font-medium disabled:opacity-40"
+                      >
+                        💡 Prepared Pitch
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isMessageLimitReached}
+                        onClick={() => handleInsertQuickTemplate('meeting')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0 disabled:opacity-40"
+                      >
+                        📅 Propose Meeting
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isMessageLimitReached}
+                        onClick={() => handleInsertQuickTemplate('deck')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0 disabled:opacity-40"
+                      >
+                        📊 Send Prospectus
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isMessageLimitReached}
+                        onClick={() => handleInsertQuickTemplate('followup')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0 disabled:opacity-40"
+                      >
+                        ⏳ Friendly Follow-up
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300 shrink-0 hidden sm:inline-block">
+                      ✉️ Quota: <strong className="text-emerald-400">{outboundMessagesCount}</strong> / 3 messages sent
+                    </span>
+                  </div>
+                )}
 
                 <form onSubmit={handleSendReply} className="flex gap-2 items-end">
                   <textarea
                     rows={2}
                     value={replyBody}
                     onChange={(e) => setReplyBody(e.target.value)}
-                    placeholder={`Compose email response to ${activeCompany?.name || 'sponsor'}...`}
-                    className="flex-1 text-xs p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition resize-none"
+                    disabled={isMessageLimitReached || sendingReply}
+                    placeholder={
+                      isMessageLimitReached
+                        ? "Outreach limit reached (3/3 sent). Further follow-ups locked to protect deliverability and avoid spam."
+                        : (!threadDetail.messages || threadDetail.messages.length === 0
+                        ? `Review or customize prepared outreach proposal to ${activeCompany?.name || 'sponsor'}...`
+                        : `Compose email response to ${activeCompany?.name || 'sponsor'}...`)
+                    }
+                    className="flex-1 text-xs p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <button
                     type="submit"
-                    disabled={sendingReply || !replyBody.trim()}
-                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-sm disabled:opacity-50 flex items-center space-x-1 shrink-0"
+                    disabled={isMessageLimitReached || sendingReply || !replyBody.trim()}
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 shrink-0"
                   >
-                    <span>{sendingReply ? 'Sending...' : 'Send ↗'}</span>
+                    <span>
+                      {isMessageLimitReached
+                        ? '🔒 Limit Reached (3/3)'
+                        : sendingReply
+                        ? 'Sending...'
+                        : (!threadDetail.messages || threadDetail.messages.length === 0
+                        ? 'Send Outreach ↗'
+                        : 'Send ↗')}
+                    </span>
                   </button>
                 </form>
               </div>

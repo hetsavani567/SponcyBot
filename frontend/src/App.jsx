@@ -18,6 +18,7 @@ import SimulateReplyModal from './components/modals/SimulateReplyModal.jsx';
 import DemoSimulationModal from './components/modals/DemoSimulationModal.jsx';
 import AuthModal from './components/modals/AuthModal.jsx';
 import DraftRequirementModal from './components/modals/DraftRequirementModal.jsx';
+import TutorialModal from './components/modals/TutorialModal.jsx';
 
 import { api } from './services/api.js';
 
@@ -59,9 +60,12 @@ export default function App() {
 
   const [demoSimulationOpen, setDemoSimulationOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [draftRequirementOpen, setDraftRequirementOpen] = useState(false);
   const [draftRequirementCompany, setDraftRequirementCompany] = useState(null);
   const [user, setUser] = useState(() => api.getCurrentUser());
+  const [activeRole, setActiveRoleState] = useState(() => api.getActiveRole());
+  const [researchingCompanyId, setResearchingCompanyId] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, visible: true });
@@ -142,14 +146,38 @@ export default function App() {
     };
   }, []);
 
+  // Launch tutorial on first sign in if user has not completed it yet
+  useEffect(() => {
+    if (user && typeof localStorage !== 'undefined') {
+      const completed = localStorage.getItem('SPONCY_TUTORIAL_COMPLETED');
+      if (!completed) {
+        const timer = setTimeout(() => {
+          setTutorialOpen(true);
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [user]);
+
   const handleSignOut = () => {
     api.signout();
     setUser(null);
+    setActiveRoleState('Organizer');
     showToast('Signed out successfully.', 'info');
+  };
+
+  const handleSwitchRole = (newRole) => {
+    api.setActiveRole(newRole);
+    setActiveRoleState(newRole);
+    if (user) {
+      setUser(prev => (prev ? { ...prev, role: newRole } : { role: newRole, name: newRole }));
+    }
+    showToast(`Active role switched to: ${newRole}`, 'info');
   };
 
   // Sponsor Actions
   const handleResearchCompany = async (companyId) => {
+    setResearchingCompanyId(companyId);
     showToast('Running AI Research & 6-factor scoring engine...', 'info');
     try {
       const { res, data } = await api.researchCompany(companyId);
@@ -162,6 +190,8 @@ export default function App() {
       }
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setResearchingCompanyId(null);
     }
   };
 
@@ -216,7 +246,8 @@ export default function App() {
   };
 
   const handleInspectCompany = (companyId) => {
-    setSelectedCompanyId(companyId);
+    const id = typeof companyId === 'object' ? (companyId._id || companyId.id) : companyId;
+    setSelectedCompanyId(id);
     setSelectedThreadId(null);
     setCurrentTab('details');
   };
@@ -227,8 +258,13 @@ export default function App() {
     setCurrentTab('details');
   };
 
-  const handleDeleteCompany = async (companyId) => {
-    if (!window.confirm('Are you sure you want to delete this sponsor company?')) return;
+  const handleDeleteCompany = async (companyId, companyName = 'Sponsor') => {
+    const currentRole = api.getActiveRole();
+    if (!api.isOrganizer(currentRole)) {
+      showToast('Permission Denied: Only Organizers can remove sponsor companies.', 'error');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete ${companyName}? Only Organizers have permission.`)) return;
     try {
       const { res, data } = await api.deleteCompany(companyId);
       if (res.ok) {
@@ -314,7 +350,9 @@ export default function App() {
         pendingApprovalsCount={pendingApprovalsCount}
         gmailStatus={gmailStatus}
         user={user}
+        activeRole={activeRole}
         onOpenAuthModal={() => setAuthModalOpen(true)}
+        onOpenTutorial={() => setTutorialOpen(true)}
         onSignOut={handleSignOut}
         onOpenGmailModal={() => setGmailModalOpen(true)}
         onOpenDemoModal={() => setDemoSimulationOpen(true)}
@@ -353,6 +391,7 @@ export default function App() {
           <SponsorsTab
             companies={companies}
             loading={companiesLoading}
+            researchingCompanyId={researchingCompanyId}
             draftingCompanyId={draftingTarget?.companyId}
             onOpenAddModal={() => setAddSponsorOpen(true)}
             onResearch={handleResearchCompany}
@@ -399,6 +438,7 @@ export default function App() {
           <DetailsTab
             selectedCompanyId={selectedCompanyId}
             selectedThreadId={selectedThreadId}
+            companies={companies}
             onShowToast={showToast}
             onRefreshStats={() => {
               fetchStats();
@@ -491,6 +531,12 @@ export default function App() {
         onClose={() => setAuthModalOpen(false)}
         onAuthSuccess={(authenticatedUser) => {
           setUser(authenticatedUser);
+          if (authenticatedUser?.role) {
+            setActiveRoleState(authenticatedUser.role);
+          }
+          if (typeof localStorage !== 'undefined' && !localStorage.getItem('SPONCY_TUTORIAL_COMPLETED')) {
+            setTutorialOpen(true);
+          }
         }}
         onShowToast={showToast}
       />
@@ -505,6 +551,16 @@ export default function App() {
         }}
         onSubmit={handleConfirmGenerateDraft}
         loading={draftingTarget?.companyId === (draftRequirementCompany?._id || draftRequirementCompany?.id)}
+      />
+
+      {/* Mini Tutorial & Complete Workflow Walkthrough */}
+      <TutorialModal
+        isOpen={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+        onFinish={() => {
+          setTutorialOpen(false);
+          showToast('Welcome to SponcyBot! You are now ready to begin outreach.', 'success');
+        }}
       />
     </div>
   );

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { api } from '../services/api.js';
 
 export default function SponsorsTab({
   companies = [],
   loading,
+  researchingCompanyId = null,
   draftingCompanyId = null,
   onOpenAddModal,
   onResearch,
@@ -11,6 +13,8 @@ export default function SponsorsTab({
   onInspect,
   onDelete
 }) {
+  const activeRole = api.getActiveRole();
+  const canDeleteSponsor = api.isOrganizer(activeRole);
   const [filterCategory, setFilterCategory] = useState('All');
 
   const categories = ['All', 'Technology', 'Cloud & Developer Tools', 'AI & Data', 'Finance', 'Education', 'Food & Beverage', 'E-commerce', 'Other'];
@@ -148,10 +152,28 @@ export default function SponsorsTab({
                         <div className="flex items-center justify-end space-x-1.5">
                           <button
                             onClick={() => onResearch(compId, c.name)}
+                            disabled={String(researchingCompanyId) === String(compId)}
                             title="Research company using Tavily + Gemini"
-                            className="px-2 py-1 bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white rounded border border-purple-500/30 transition text-[11px] flex items-center space-x-1"
+                            className={`px-2 py-1 rounded border transition text-[11px] flex items-center space-x-1.5 ${
+                              String(researchingCompanyId) === String(compId)
+                                ? 'bg-purple-600/40 text-purple-200 border-purple-500/50 cursor-wait'
+                                : 'bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border-purple-500/30'
+                            }`}
                           >
-                            <span>🔍 AI Research</span>
+                            {String(researchingCompanyId) === String(compId) ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3 text-purple-200 inline-block shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span className="font-semibold">Researching...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>🔍</span>
+                                <span>AI Research</span>
+                              </>
+                            )}
                           </button>
                           <button
                             onClick={() => onGenerateDraft(compId)}
@@ -174,17 +196,21 @@ export default function SponsorsTab({
                           </button>
                           <button
                             onClick={() => onInspect(compId)}
-                            title="View 6-factor score breakdown"
-                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition text-[11px]"
+                            title="Inspect sponsor & prepare conversation chat"
+                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition text-[11px] flex items-center space-x-1"
                           >
-                            Inspect &rarr;
+                            <span>Inspect &rarr;</span>
                           </button>
                           <button
                             onClick={() => onDelete(compId, c.name || c.company)}
-                            title="Delete Sponsor"
-                            className="px-1.5 py-1 text-slate-500 hover:text-red-400 rounded transition text-[11px]"
+                            title={canDeleteSponsor ? "Delete Sponsor (Organizer Only)" : "Permission Denied: Only Organizers can remove sponsor companies"}
+                            className={`px-1.5 py-1 rounded transition text-[11px] ${
+                              canDeleteSponsor
+                                ? "text-slate-500 hover:text-red-400"
+                                : "text-slate-600 hover:text-amber-400 cursor-not-allowed"
+                            }`}
                           >
-                            ✕
+                            {canDeleteSponsor ? "✕" : "🔒 ✕"}
                           </button>
                         </div>
                       </td>
