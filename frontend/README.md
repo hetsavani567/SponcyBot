@@ -4,6 +4,18 @@ Interactive, reactive dashboard for SponcyBot: AI-powered sponsor research, Huma
 
 ---
 
+## 🛠️ Frontend Tech Stack
+
+| Technology | Role | Highlights |
+|---|---|---|
+| **React 18** | UI Framework | Hooks-based state orchestration, concurrent features, memoized callbacks (`useCallback`, `useMemo`). |
+| **Vite 5** | Bundler & Dev Server | Sub-150ms Hot Module Replacement (HMR), tree-shaking, production roll-up to `dist/`. |
+| **Tailwind CSS** | Styling System | Utility-first responsive design, dark slate theme, custom glassmorphism, pulse indicators. |
+| **safeFetchJson Client** | In-Memory Data Layer | Sub-5ms client-side cache hits, concurrent request deduplication, tag-based cache invalidation. |
+| **Inter Font & Custom CSS** | Typography & Polish | Ultra-clean typography, custom scrollbars, high-contrast badges for review status. |
+
+---
+
 ## 📁 Architecture & Component Hierarchy
 
 ```
@@ -14,13 +26,15 @@ frontend/
 ├── src/
 │   ├── components/                   # Modular React UI Components
 │   │   ├── modals/                   # Reusable Modal Dialogs
-│   │   │   ├── AddMemberModal.jsx    # Add organizer/team member dialog
-│   │   │   ├── AddSponsorModal.jsx   # Add new sponsor company dialog
-│   │   │   ├── AssignOutreachModal.jsx # Assign sponsor to member (with 409 duplicate guard)
-│   │   │   ├── DemoSimulationModal.jsx # 12-Step autonomous workflow simulation runner
-│   │   │   ├── GmailModal.jsx        # OAuth 2.0 & 1-Click demo connection hub
+│   │   │   ├── AddMemberModal.jsx        # Add organizer/team member dialog
+│   │   │   ├── AddSponsorModal.jsx       # Add new sponsor company dialog
+│   │   │   ├── AssignOutreachModal.jsx   # Assign sponsor to member (409 duplicate guard)
+│   │   │   ├── AuthModal.jsx             # Role-based sign in / sign up dialog
+│   │   │   ├── DemoSimulationModal.jsx   # 12-Step autonomous lifecycle runner
+│   │   │   ├── DraftRequirementModal.jsx # Custom requirement & bounty prompter
+│   │   │   ├── GmailModal.jsx            # OAuth 2.0 & 1-Click demo connection hub
 │   │   │   ├── OutreachTimelineModal.jsx # Full chronological audit trail modal
-│   │   │   └── SimulateReplyModal.jsx # Test AI sentiment analysis & outcome confirmation
+│   │   │   └── SimulateReplyModal.jsx    # Test AI sentiment analysis & outcome confirmation
 │   │   ├── ApprovalTab.jsx           # Screen 3: Email Reviewer, Version Diffs & Send Guard
 │   │   ├── BackendBanner.jsx         # Connection alert banner for backend status
 │   │   ├── DashboardTab.jsx          # Screen 1: 6 Metric overview cards & quick actions

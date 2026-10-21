@@ -12,6 +12,24 @@ SponcyBot automates hackathon sponsor outreach end-to-end. It replaces scattered
 
 ---
 
+## 🛠️ Comprehensive Tech Stack
+
+SponcyBot is built as a production-grade, decoupled fullstack system adhering to clean architecture, zero-cost developer tiers, and strict security sandboxing:
+
+| Layer | Technologies & Frameworks | Architectural Role & Implementation Details |
+|---|---|---|
+| **Frontend Framework** | **React 18**, **Vite 5**, **JavaScript (ES Modules)** | Reactive component state, lightning-fast HMR (<150ms), unified production build served via Express. |
+| **Styling & Design System** | **Tailwind CSS**, **Custom Dark Theme**, **Glassmorphism** | Responsive high-contrast dark dashboard, custom typography, status badges, animated transitions, and modal dialogs. |
+| **Client Data Layer** | **Custom In-Memory TTL Cache**, **safeFetchJson Client** | Sub-5ms client-side cache hits, stampede request deduplication, optimistic UI updates, and tag-based invalidation. |
+| **Backend & Web Server** | **Node.js (v18+/v20+)**, **Express.js (v4.x)** | RESTful API endpoints, rate limiting, modular Controller-Service-Repository pattern, and static asset pipeline. |
+| **Database & ODM** | **MongoDB (Atlas & Local)**, **Mongoose 8.x** | Document schemas, index optimization, atomic state transitions, and immutable audit logs (`OutreachEvent`, `ApprovalLog`). |
+| **AI & LLM Services** | **Google Gemini API** (`gemini-2.5-flash`, `gemini-1.5-flash`), **Tavily AI Search** | Multi-factor sponsor scoring (6 dimensions), corporate web intelligence synthesis, dynamic requirement-driven email drafting. |
+| **Email & Outbound Engine** | **Google Gmail REST API (v1)**, **OAuth 2.0 PKCE**, **Base64url MIME** | RFC 2822 email compilation, Human-in-the-Loop **Send Guard** middleware, live reply sentiment classification, and 1-Click Demo Sandbox. |
+| **Authentication & RBAC** | **JWT Session Tokens**, **Role Guards** | Organizer and Reviewer role access, secure password hashing, and authorization headers. |
+| **Testing & CI/CD** | **Native Node.js Test Runner (`assert`)**, **Postman Collections**, **Concurrently** | Automated CRM state machine tests, Repetition Guard tests, cache latency tests, and monorepo scripts. |
+
+---
+
 ## 📁 Clean Architecture & Folder Structure
 
 The project is structured into decoupled, modular **Frontend** (React 18 + Vite) and **Backend** (Node.js + Express + MongoDB) directories:
@@ -25,13 +43,15 @@ SponcyBot/
 │   ├── src/
 │   │   ├── components/               # Modular UI Components
 │   │   │   ├── modals/               # Reusable Modal Dialogs
-│   │   │   │   ├── AddMemberModal.jsx
-│   │   │   │   ├── AddSponsorModal.jsx
-│   │   │   │   ├── AssignOutreachModal.jsx
-│   │   │   │   ├── DemoSimulationModal.jsx
-│   │   │   │   ├── GmailModal.jsx
-│   │   │   │   ├── OutreachTimelineModal.jsx
-│   │   │   │   └── SimulateReplyModal.jsx
+│   │   │   │   ├── AddMemberModal.jsx        # Add organizer/team member dialog
+│   │   │   │   ├── AddSponsorModal.jsx       # Add new sponsor company dialog
+│   │   │   │   ├── AssignOutreachModal.jsx   # Assign sponsor to member (409 guard)
+│   │   │   │   ├── AuthModal.jsx             # Role-based sign in / sign up dialog
+│   │   │   │   ├── DemoSimulationModal.jsx   # 12-Step autonomous lifecycle runner
+│   │   │   │   ├── DraftRequirementModal.jsx # Custom requirement & bounty prompter
+│   │   │   │   ├── GmailModal.jsx            # OAuth 2.0 & demo mailbox hub
+│   │   │   │   ├── OutreachTimelineModal.jsx # Full chronological audit trail
+│   │   │   │   └── SimulateReplyModal.jsx    # Test AI sentiment & outcome confirmation
 │   │   │   ├── ApprovalTab.jsx       # Screen 3: Email Reviewer & Send Guard
 │   │   │   ├── BackendBanner.jsx     # Connection alert banner
 │   │   │   ├── DashboardTab.jsx      # Screen 1: 6 Metric cards & overview

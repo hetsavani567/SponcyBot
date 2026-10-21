@@ -74,8 +74,12 @@ const approveEmailWithLog = async ({
     throw error;
   }
 
-  if (email.status !== "PENDING_APPROVAL") {
-    const error = new Error(`Cannot approve an email that is ${email.status}`);
+  if (email.status === "APPROVED") {
+    return { email, log: null };
+  }
+
+  if (email.status === "SENT") {
+    const error = new Error("Cannot approve an email that has already been dispatched via Gmail");
     error.statusCode = 409;
     throw error;
   }
@@ -116,8 +120,8 @@ const rejectEmailWithLog = async ({
     throw error;
   }
 
-  if (email.status !== "PENDING_APPROVAL") {
-    const error = new Error(`Cannot reject an email that is ${email.status}`);
+  if (email.status === "SENT") {
+    const error = new Error("Cannot reject an email that has already been dispatched via Gmail");
     error.statusCode = 409;
     throw error;
   }

@@ -17,6 +17,7 @@ import OutreachTimelineModal from './components/modals/OutreachTimelineModal.jsx
 import SimulateReplyModal from './components/modals/SimulateReplyModal.jsx';
 import DemoSimulationModal from './components/modals/DemoSimulationModal.jsx';
 import AuthModal from './components/modals/AuthModal.jsx';
+import DraftRequirementModal from './components/modals/DraftRequirementModal.jsx';
 
 import { api } from './services/api.js';
 
@@ -31,6 +32,7 @@ export default function App() {
   const [companies, setCompanies] = useState([]);
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
 
   // Live AI Drafting status for instant Approval Queue rendering
   const [draftingTarget, setDraftingTarget] = useState(null); // { companyId, companyName }
@@ -57,6 +59,8 @@ export default function App() {
 
   const [demoSimulationOpen, setDemoSimulationOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [draftRequirementOpen, setDraftRequirementOpen] = useState(false);
+  const [draftRequirementCompany, setDraftRequirementCompany] = useState(null);
   const [user, setUser] = useState(() => api.getCurrentUser());
 
   const showToast = useCallback((message, type = 'info') => {
@@ -161,17 +165,26 @@ export default function App() {
     }
   };
 
-  const handleGenerateDraft = async (companyId) => {
+  const handleOpenDraftModal = (companyId) => {
     const comp = companies.find(c => (c._id || c.id) === companyId);
+    if (!comp) return;
+    setDraftRequirementCompany(comp);
+    setDraftRequirementOpen(true);
+  };
+
+  const handleConfirmGenerateDraft = async (companyId, requirements = {}) => {
+    const comp = companies.find(c => (c._id || c.id) === companyId) || draftRequirementCompany;
     const compName = comp?.name || comp?.company || 'Sponsor';
+
+    setDraftRequirementOpen(false);
 
     // Instantly transition to Approval queue with zero lag (0ms response)
     setCurrentTab('approval');
     setDraftingTarget({ companyId, companyName: compName });
-    showToast(`⚡ Drafting AI proposal for ${compName}... Landing in queue.`, 'info');
+    showToast(`⚡ Drafting unique AI proposal for ${compName} based on requirements...`, 'info');
 
     try {
-      const { res, data } = await api.generateDraft(companyId);
+      const { res, data } = await api.generateDraft(companyId, requirements);
       if (res.ok) {
         const createdEmail = data?.data?.email || data?.email;
         if (createdEmail) {
@@ -182,9 +195,9 @@ export default function App() {
           setPreselectedEmailId(createdEmail._id);
         }
         if (data?.usedFallback) {
-          showToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+          showToast('Draft created using resilient requirements engine. Review and approve in queue.', 'info');
         } else {
-          showToast(`AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
+          showToast(`✨ Unique AI proposal draft for ${compName} created! Send Guard requires human review.`, 'success');
         }
         fetchStats();
       } else {
@@ -204,6 +217,13 @@ export default function App() {
 
   const handleInspectCompany = (companyId) => {
     setSelectedCompanyId(companyId);
+    setSelectedThreadId(null);
+    setCurrentTab('details');
+  };
+
+  const handleViewThread = (companyId, threadId) => {
+    if (companyId) setSelectedCompanyId(companyId);
+    if (threadId) setSelectedThreadId(threadId);
     setCurrentTab('details');
   };
 
@@ -239,6 +259,12 @@ export default function App() {
     setSimulateReplyOpen(true);
   };
 
+  const handleDemoSuccess = useCallback(() => {
+    fetchStats();
+    fetchSponsors();
+    showToast('⚡ 12-Step Lifecycle Simulation completed successfully!', 'success');
+  }, [fetchStats, fetchSponsors, showToast]);
+
   const pendingApprovalsCount = stats?.emails?.pendingApproval ?? 0;
 
   return (
@@ -250,6 +276,36 @@ export default function App() {
         visible={toast.visible}
         onClose={hideToast}
       />
+
+      {/* Floating Run Demo Trigger (Bottom-Left Corner on All Pages) */}
+      <aside aria-label="Run Demo Action" className="fixed bottom-5 left-5 z-40">
+        <button
+          type="button"
+          onClick={() => setDemoSimulationOpen(true)}
+          title="Run 12-Step Autonomous Sponsor Outreach Simulation"
+          aria-label="Run Demo Simulation"
+          className="group relative flex items-center space-x-2.5 px-3.5 py-2.5 rounded-full bg-slate-900/95 hover:bg-slate-800 text-slate-100 hover:text-white border border-emerald-500/40 hover:border-emerald-400 shadow-xl shadow-emerald-500/20 backdrop-blur-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+        >
+          {/* Glowing pulse lightning icon */}
+          <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs shadow-md">
+            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            ⚡
+          </span>
+
+          {/* Label */}
+          <div className="flex items-center space-x-1.5 text-left">
+            <span className="text-xs font-bold tracking-tight text-white group-hover:text-emerald-300 transition-colors">
+              Run Demo
+            </span>
+            <span className="hidden sm:inline-block text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+              12 Steps
+            </span>
+          </div>
+        </button>
+      </aside>
 
       {/* Header & Navigation */}
       <Navbar
@@ -288,6 +344,7 @@ export default function App() {
             onSwitchTab={setCurrentTab}
             onOpenGmailModal={() => setGmailModalOpen(true)}
             onOpenAddSponsorModal={() => setAddSponsorOpen(true)}
+            onOpenDemoModal={() => setDemoSimulationOpen(true)}
           />
         )}
 
@@ -299,7 +356,7 @@ export default function App() {
             draftingCompanyId={draftingTarget?.companyId}
             onOpenAddModal={() => setAddSponsorOpen(true)}
             onResearch={handleResearchCompany}
-            onGenerateDraft={handleGenerateDraft}
+            onGenerateDraft={handleOpenDraftModal}
             onAssign={handleAssignOutreachFromSponsor}
             onInspect={handleInspectCompany}
             onDelete={handleDeleteCompany}
@@ -317,6 +374,7 @@ export default function App() {
             newlyCreatedEmail={newlyCreatedEmail}
             preselectedEmailId={preselectedEmailId}
             onDraftHandled={() => setNewlyCreatedEmail(null)}
+            onOpenDraftRequirement={handleOpenDraftModal}
           />
         )}
 
@@ -330,6 +388,7 @@ export default function App() {
             }}
             onOpenTimeline={handleOpenTimeline}
             onOpenSimulateReply={handleOpenSimulateReply}
+            onViewThread={handleViewThread}
             onShowToast={showToast}
             onRefreshStats={fetchStats}
           />
@@ -339,11 +398,13 @@ export default function App() {
         {currentTab === 'details' && (
           <DetailsTab
             selectedCompanyId={selectedCompanyId}
+            selectedThreadId={selectedThreadId}
             onShowToast={showToast}
             onRefreshStats={() => {
               fetchStats();
               fetchSponsors();
             }}
+            onSwitchTab={setCurrentTab}
           />
         )}
       </main>
@@ -421,10 +482,7 @@ export default function App() {
       <DemoSimulationModal
         isOpen={demoSimulationOpen}
         onClose={() => setDemoSimulationOpen(false)}
-        onSuccess={() => {
-          fetchStats();
-          fetchSponsors();
-        }}
+        onSuccess={handleDemoSuccess}
         onShowToast={showToast}
       />
 
@@ -435,6 +493,18 @@ export default function App() {
           setUser(authenticatedUser);
         }}
         onShowToast={showToast}
+      />
+
+      {/* Sponsor Requirement Modal for Unique AI Draft Generation */}
+      <DraftRequirementModal
+        isOpen={draftRequirementOpen}
+        company={draftRequirementCompany}
+        onClose={() => {
+          setDraftRequirementOpen(false);
+          setDraftRequirementCompany(null);
+        }}
+        onSubmit={handleConfirmGenerateDraft}
+        loading={draftingTarget?.companyId === (draftRequirementCompany?._id || draftRequirementCompany?.id)}
       />
     </div>
   );

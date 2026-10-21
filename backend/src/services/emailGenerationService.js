@@ -60,7 +60,8 @@ function parseAndValidateEmailResponse(rawText, company = {}, options = {}) {
   const organizerRole = (options && options.organizerRole) || process.env.ORGANIZER_ROLE || "Lead, Sponsorships & Partnerships";
   const organizerOrg = (options && options.organizerOrg) || process.env.ORGANIZER_ORG || "ACM NIT Surat";
   const organizerEmail = (options && options.organizerEmail) || process.env.ORGANIZER_EMAIL || "partnerships@sponsybot.com";
-  const eventName = (options && options.eventName) || process.env.EVENT_NAME || "Hackathon 2026";
+  const eventName = (options && options.eventName) || process.env.EVENT_NAME || "HackFest 2026";
+  const eventDates = (options && options.eventDates) || process.env.EVENT_DATES || "November 14–16, 2026";
   const brandName = (company && company.name ? company.name : "Partner")
     .replace(/\s*(Pvt\.?\s*Ltd\.?|Inc\.?|LLC|Corp\.?|Ltd\.?)$/i, "")
     .trim();
@@ -76,7 +77,7 @@ function parseAndValidateEmailResponse(rawText, company = {}, options = {}) {
       .replace(/\[(?:Email|Organizer Email)\]/gi, organizerEmail)
       .replace(/\[(?:Phone Number|Phone|Contact)\]/gi, "+91 98765 43210")
       .replace(/\[(?:Website\/LinkedIn|LinkedIn|Website|Link)\]/gi, "https://sponsybot.com")
-      .replace(/\[(?:Insert Date|Date)\]/gi, "November 14-16, 2026")
+      .replace(/\[(?:Insert Date|Date|Dates|Event Date|Event Dates)\]/gi, eventDates)
       .replace(/\[[a-zA-Z0-9_\s-]{2,40}\]/g, ""); // strip any remaining orphan bracket placeholder
   };
 
@@ -91,7 +92,8 @@ function generateFallbackEmail(company, options = {}) {
   const tier = company.recommendedTier || "Silver";
   const ask = company.recommendedAsk || "money";
   const contact = company.contactName ? company.contactName.trim().split(/\s+/)[0] : "Partnerships Team";
-  const eventName = options.eventName || process.env.EVENT_NAME || "Hackathon 2026";
+  const eventName = options.eventName || process.env.EVENT_NAME || "HackFest 2026";
+  const eventDates = options.eventDates || process.env.EVENT_DATES || "November 14–16, 2026";
   const organizerOrg = options.organizerOrg || process.env.ORGANIZER_ORG || "ACM NIT Surat";
   const organizerName = options.organizerName || process.env.ORGANIZER_NAME || "Sponsorship Team";
   const organizerRole = options.organizerRole || process.env.ORGANIZER_ROLE || "Lead, Partnerships";
@@ -115,8 +117,15 @@ function generateFallbackEmail(company, options = {}) {
     ? `developer swag, hardware kits, and bounty prizes for participants`
     : `${tier} tier sponsorship contribution (${tier === "Gold" ? "₹1,50,000" : "₹75,000"})`;
 
-  const customRequirementSentence = options.customInstructions && options.customInstructions.trim()
-    ? `\n\nSpecific to our conversation: ${options.customInstructions.trim()}`
+  const customReq = options.customInstructions && options.customInstructions.trim();
+  const customRequirementSentence = customReq
+    ? `\n\nTailored Partnership Focus: We specifically designed this proposal around your requirement: "${customReq}".`
+    : "";
+  const customRequirementBullet = customReq
+    ? `• Dedicated Requirement: ${customReq} (exclusive track & direct builder engagement)\n`
+    : "";
+  const customRequirementIntro = customReq
+    ? `We are reaching out specifically to collaborate with ${brandName} on our hackathon priority: "${customReq}".\n\n`
     : "";
 
   const requested = (options.requestedSubject || "").trim();
@@ -126,7 +135,7 @@ function generateFallbackEmail(company, options = {}) {
   if (type === "followup1") {
     return {
       subject: subjectOr(`Re: ${brandName} x ${eventName} - Partnership Discussion`),
-      body: `Hi ${contact},\n\n${topicLine}I wanted to quickly follow up on our previous note regarding partnering for ${eventName}. We are locking in our ${tier} tier partners this week.\n\n${pitchAngle}\n\nWe would love to collaborate on ${askAngle}.${customRequirementSentence}\n\nWould you have 10 minutes this Thursday for a brief introductory call?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+      body: `Hi ${contact},\n\n${topicLine}I wanted to quickly follow up on our previous note regarding partnering for ${eventName} (${eventDates}). We are locking in our ${tier} tier partners this week.\n\n${pitchAngle}\n\nWe would love to collaborate on ${askAngle}.${customRequirementSentence}\n\nWould you have 10 minutes this Thursday for a brief introductory call?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
       usedFallback: true,
       attempts: 1
@@ -135,16 +144,20 @@ function generateFallbackEmail(company, options = {}) {
   if (type === "followup2") {
     return {
       subject: subjectOr(`Final follow-up: ${brandName} x ${eventName}`),
-      body: `Hi ${contact},\n\n${topicLine}I understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName}.\n\nIf you'd like to explore student engagement with ${brandName} (${askAngle}), please let us know.${customRequirementSentence}\n\nOtherwise, we hope to stay in touch for future editions!\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+      body: `Hi ${contact},\n\n${topicLine}I understand you are busy, so this will be my final follow-up. We are finalizing our partner roster for ${eventName} (${eventDates}).\n\nIf you'd like to explore student engagement with ${brandName} (${askAngle}), please let us know.${customRequirementSentence}\n\nOtherwise, we hope to stay in touch for future editions!\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
       promptUsed: "Resilient Fallback Engine",
       usedFallback: true,
       attempts: 1
     };
   }
 
+  const defaultInitialSubject = customReq
+    ? `${brandName} x ${eventName} — ${customReq.length > 30 ? customReq.slice(0, 30) + '...' : customReq}`
+    : `${brandName} x ${eventName} - ${tier} Partnership Proposal`;
+
   return {
-    subject: subjectOr(`${brandName} x ${eventName} - ${tier} Partnership Proposal`),
-    body: `Hello ${contact},\n\n${topicLine}${pitchAngle}\n\nWe are organizing ${eventName} with ${organizerOrg}, convening 500+ top student developers, engineers, and designers for 36 hours of high-impact building.\n\nWe would love to welcome ${brandName} as a ${tier} Partner. Specifically, we are proposing collaboration on:\n• ${askAngle}\n• 45-minute hands-on workshop track and challenge bounty\n• Opt-in access to finalist resume database for engineering and DevRel hiring\n• Prime brand visibility across digital channels, stage, and our 1,500+ builder community${customRequirementSentence}\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
+    subject: subjectOr(defaultInitialSubject),
+    body: `Hello ${contact},\n\n${topicLine}${customRequirementIntro}${pitchAngle}\n\nWe are organizing ${eventName} with ${organizerOrg} on ${eventDates}, convening 500+ top student developers, engineers, and designers for high-impact building.\n\nWe would love to welcome ${brandName} as a ${tier} Partner. Specifically, we are proposing collaboration on:\n${customRequirementBullet}• ${askAngle}\n• 45-minute hands-on workshop track and challenge bounty\n• Opt-in access to finalist resume database for engineering and DevRel hiring\n• Prime brand visibility across digital channels, stage, and our 1,500+ builder community${customRequirementSentence}\n\nCould we schedule a 15-minute introductory call this week to share our deck and discuss synergies?\n\nBest regards,\n${organizerName}\n${organizerRole}, ${organizerOrg}`,
     promptUsed: "Resilient Fallback Engine",
     usedFallback: true,
     attempts: 1
@@ -199,5 +212,6 @@ async function generateEmailDraft(company, options = {}) {
 
 module.exports = {
   generateEmailDraft,
+  generateFallbackEmail,
   parseAndValidateEmailResponse
 };

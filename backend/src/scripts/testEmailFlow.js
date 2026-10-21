@@ -87,7 +87,7 @@ async function runEndToEndTest() {
 
     // 6. Test human edit (creating version 3)
     console.log("6. Testing human edit (creating version 3)...");
-    const humanSubject = "Updated: Exclusive Gold Partnership with Sponsy Bot Hackathon";
+    const humanSubject = "Updated: Exclusive Gold Partnership with HackFest 2026";
     const humanBody = emailV2.body + "\n\nP.S. We also have booth spaces available!";
     const { email: emailV3, emailVersion: v3 } = await recordHumanEdit({
       emailId: email._id,

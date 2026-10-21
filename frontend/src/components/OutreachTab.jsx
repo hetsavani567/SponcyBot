@@ -7,6 +7,7 @@ export default function OutreachTab({
   onOpenSimulateReply,
   onShowToast,
   onRefreshStats,
+  onViewThread,
   refreshTrigger = 0
 }) {
   const [outreaches, setOutreaches] = useState([]);
@@ -240,6 +241,16 @@ export default function OutreachTab({
                             <span className="text-[10px] text-slate-500 font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
                               Capped
                             </span>
+                          )}
+
+                          {o.threadId && onViewThread && (
+                            <button
+                              onClick={() => onViewThread(o.companyId?._id || o.companyId, o.threadId)}
+                              title="Open Conversation Thread & Deep Dive"
+                              className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded border border-indigo-500/30 transition text-[11px]"
+                            >
+                              💬 Thread
+                            </button>
                           )}
 
                           <button

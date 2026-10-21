@@ -319,11 +319,12 @@ export const api = {
     return [];
   },
 
-  generateDraft: async (companyId) => {
+  generateDraft: async (companyId, options = {}) => {
+    const payload = typeof companyId === 'object' ? companyId : { companyId, ...options };
     const { res, data } = await safeFetchJson('/emails/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ companyId })
+      body: JSON.stringify(payload)
     });
     invalidateCache('/emails');
     invalidateCache('/gmail/stats');
@@ -331,17 +332,17 @@ export const api = {
     return { res, data };
   },
 
-  approveEmail: async (emailId, reviewerName = 'Partnerships Director') => {
+  approveEmail: async (emailId, reviewerName = 'Partnerships Director', options = {}) => {
     const { res, data } = await safeFetchJson(`/emails/${emailId}/approve`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-enforce-repetition-guard': 'true'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         reviewerName,
         notes: 'Verified tier, ask, and unique personalization.',
-        requireRegenerated: true
+        allowInitial: true,
+        ...options
       })
     });
     invalidateCache('/emails');
@@ -520,9 +521,42 @@ export const api = {
   },
 
   // Gmail Threads & AI Classification
+  getThreads: async () => {
+    const { data } = await safeFetchJson('/gmail/threads', { ttlMs: 15000 });
+    return data?.data || [];
+  },
+
   getThread: async (threadId) => {
     const { data } = await safeFetchJson(`/gmail/thread/${threadId}?mock=true`, { ttlMs: 15000 });
     return data?.data?.thread;
+  },
+
+  sendThreadReply: async (threadId, payload) => {
+    const { res, data } = await safeFetchJson(`/gmail/thread/${threadId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    invalidateCache('/gmail/threads');
+    invalidateCache(`/gmail/thread/${threadId}`);
+    invalidateCache('/outreach');
+    invalidateCache('/gmail/stats');
+    invalidateCache('/api/bootstrap');
+    return { res, data };
+  },
+
+  simulateThreadReply: async (threadId, payload) => {
+    const { res, data } = await safeFetchJson(`/gmail/thread/${threadId}/simulate-reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    invalidateCache('/gmail/threads');
+    invalidateCache(`/gmail/thread/${threadId}`);
+    invalidateCache('/outreach');
+    invalidateCache('/gmail/stats');
+    invalidateCache('/api/bootstrap');
+    return { res, data };
   },
 
   classifyReply: async (payload) => {
@@ -540,6 +574,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    invalidateCache('/gmail/threads');
     invalidateCache('/outreach');
     invalidateCache('/gmail/stats');
     invalidateCache('/api/bootstrap');

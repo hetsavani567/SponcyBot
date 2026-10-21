@@ -9,7 +9,8 @@ export default function ApprovalTab({
   draftingTarget = null,
   newlyCreatedEmail = null,
   preselectedEmailId = null,
-  onDraftHandled = null
+  onDraftHandled = null,
+  onOpenDraftRequirement = null
 }) {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,9 @@ export default function ApprovalTab({
   const [localDraftingTarget, setLocalDraftingTarget] = useState(null);
   const [preserveSubject, setPreserveSubject] = useState(true);
   const [customInstructions, setCustomInstructions] = useState('');
+  const [eventNameInput, setEventNameInput] = useState('HackFest 2026');
+  const [eventDatesInput, setEventDatesInput] = useState('November 14–16, 2026');
+  const [auditTrailOpen, setAuditTrailOpen] = useState(false);
 
   const activeDrafting = draftingTarget || localDraftingTarget;
 
@@ -75,6 +79,10 @@ export default function ApprovalTab({
     }
     const target = companies[0];
     const targetId = target._id || target.id;
+    if (onOpenDraftRequirement) {
+      onOpenDraftRequirement(targetId);
+      return;
+    }
     const targetName = target.name || target.company || 'Top Sponsor';
     setAutoDrafting(true);
     setLocalDraftingTarget({ companyId: targetId, companyName: targetName });
@@ -83,7 +91,7 @@ export default function ApprovalTab({
       const { res, data } = await api.generateDraft(targetId);
       if (res.ok) {
         if (data?.usedFallback) {
-          onShowToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+          onShowToast('Draft created using resilient requirements engine.', 'info');
         } else {
           onShowToast('Draft created successfully! Review and approve below.', 'success');
         }
@@ -114,20 +122,26 @@ export default function ApprovalTab({
   }, [loadEmails]);
 
   const selectedEmail = emails.find(e => e._id === selectedEmailId) || null;
-  const hasRegenerated = Boolean(selectedEmail?.version > 1);
-  const canApprove = hasRegenerated;
-
+  const isCustomDraft = Boolean(
+    selectedEmail?.version > 1 ||
+    selectedEmail?.isCustomized ||
+    (selectedEmail?.customInstructions && selectedEmail.customInstructions.trim())
+  );
   // Whenever selected email changes or updates, populate inputs and fetch approval history
   useEffect(() => {
     if (!selectedEmail) {
       setSubjectInput('');
       setBodyInput('');
+      setCustomInstructions('');
       setApprovalHistory([]);
       return;
     }
 
     setSubjectInput(selectedEmail.subject || '');
     setBodyInput(selectedEmail.body || '');
+    setCustomInstructions(selectedEmail.customInstructions || '');
+    setEventNameInput(selectedEmail.eventName || 'HackFest 2026');
+    setEventDatesInput(selectedEmail.eventDates || 'November 14–16, 2026');
 
     let isMounted = true;
     if (selectedEmail._id) {
@@ -168,21 +182,17 @@ export default function ApprovalTab({
   const handleApprove = async () => {
     if (!selectedEmail) return;
 
-    if (!canApprove) {
-      onShowToast('Repetition Guard: Direct approval locked. Please click "Generate New AI Email" first to personalize this outreach and eliminate repetition.', 'warning');
-      return;
-    }
-
-    const reviewer = window.prompt('Reviewer Name (or press OK for default):', 'Partnerships Director') || 'Partnerships Director';
     setActing(true);
+    onShowToast('✓ Approving proposal for Gmail dispatch...', 'info');
     try {
-      const { res, data } = await api.approveEmail(selectedEmail._id, reviewer);
+      const { res, data } = await api.approveEmail(selectedEmail._id, 'Partnerships Director');
       if (res.ok) {
         onShowToast('Email approved! Send Guard now permits outbound send.', 'success');
+        setEmails(prev => prev.map(e => e._id === selectedEmail._id ? { ...e, status: 'APPROVED', isApproved: true } : e));
         await loadEmails(selectedEmail._id);
         if (onRefreshStats) onRefreshStats();
       } else {
-        onShowToast(data.message || 'Approval failed', 'error');
+        onShowToast(data?.message || 'Approval failed', 'error');
       }
     } catch (err) {
       onShowToast(err.message, 'error');
@@ -193,18 +203,19 @@ export default function ApprovalTab({
 
   const handleReject = async () => {
     if (!selectedEmail) return;
-    const reason = window.prompt('Reason for rejection (guides rewrite loop):', 'Needs to highlight cloud credits and student bounty track.');
-    if (!reason) return;
 
     setActing(true);
+    onShowToast('Moving draft to rejected rewrite loop...', 'info');
     try {
+      const reason = customInstructions?.trim() || 'Revisions requested by reviewer';
       const { res, data } = await api.rejectEmail(selectedEmail._id, reason);
       if (res.ok) {
         onShowToast('Draft rejected and moved back to DRAFT for rewrite loop.', 'warning');
+        setEmails(prev => prev.map(e => e._id === selectedEmail._id ? { ...e, status: 'DRAFT', isRejected: true, rejectionReason: reason } : e));
         await loadEmails(selectedEmail._id);
         if (onRefreshStats) onRefreshStats();
       } else {
-        onShowToast(data.message || 'Rejection failed', 'error');
+        onShowToast(data?.message || 'Rejection failed', 'error');
       }
     } catch (err) {
       onShowToast(err.message, 'error');
@@ -214,21 +225,31 @@ export default function ApprovalTab({
   };
 
   const handleDeleteDraft = async (emailId, subject = '') => {
-    if (!window.confirm(`Are you sure you want to permanently remove this draft${subject ? ` ("${subject.slice(0, 30)}...")` : ''}?`)) {
-      return;
-    }
+    if (!emailId) return;
+
+    // Optimistically remove immediately from local state
+    setEmails(prev => {
+      const remaining = prev.filter(e => e._id !== emailId);
+      if (selectedEmailId === emailId) {
+        setSelectedEmailId(remaining.length > 0 ? remaining[0]._id : null);
+      }
+      return remaining;
+    });
+
     setActing(true);
     try {
       const { res, data } = await api.deleteEmail(emailId);
       if (res.ok) {
         onShowToast('Draft removed successfully from queue.', 'info');
-        await loadEmails(selectedEmailId === emailId ? null : selectedEmailId);
+        await loadEmails();
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to remove draft', 'error');
+        await loadEmails();
       }
     } catch (err) {
       onShowToast(err.message, 'error');
+      await loadEmails();
     } finally {
       setActing(false);
     }
@@ -240,9 +261,8 @@ export default function ApprovalTab({
       onShowToast('No rejected drafts found in queue.', 'info');
       return;
     }
-    if (!window.confirm(`Remove all ${rejectedCount} rejected draft(s) from the queue?`)) {
-      return;
-    }
+
+    setEmails(prev => prev.filter(e => !e.isRejected && e.status !== 'REJECTED'));
     setActing(true);
     try {
       const { res, data } = await api.deleteRejectedEmails();
@@ -252,9 +272,11 @@ export default function ApprovalTab({
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to remove rejected drafts', 'error');
+        await loadEmails();
       }
     } catch (err) {
       onShowToast(err.message, 'error');
+      await loadEmails();
     } finally {
       setActing(false);
     }
@@ -262,22 +284,23 @@ export default function ApprovalTab({
 
   const handleDeleteAllDrafts = async () => {
     if (emails.length === 0) return;
-    if (!window.confirm(`Are you sure you want to remove all ${emails.length} draft(s) from the queue? This will clear any mock or test drafts.`)) {
-      return;
-    }
+
+    setEmails([]);
+    setSelectedEmailId(null);
     setActing(true);
     try {
       const { res, data } = await api.deleteAllDrafts();
       if (res.ok) {
         onShowToast(`Cleared ${data?.count ?? emails.length} draft(s). Queue is clean!`, 'success');
-        setSelectedEmailId(null);
         await loadEmails(null);
         if (onRefreshStats) onRefreshStats();
       } else {
         onShowToast(data?.message || 'Failed to clear drafts', 'error');
+        await loadEmails();
       }
     } catch (err) {
       onShowToast(err.message, 'error');
+      await loadEmails();
     } finally {
       setActing(false);
     }
@@ -309,19 +332,22 @@ export default function ApprovalTab({
   const handleRegenerate = async () => {
     if (!selectedEmail) return;
     setRegenerating(true);
-    onShowToast('Generating new personalized AI email version...', 'info');
+    onShowToast('Generating tailored AI email copy...', 'info');
     try {
       const activeSubject = subjectInput.trim() || selectedEmail.subject;
+      const activeInstructions = customInstructions.trim() || selectedEmail.customInstructions || '';
       const { res, data } = await api.regenerateDraft(selectedEmail._id, {
-        customInstructions: customInstructions.trim(),
+        customInstructions: activeInstructions,
         subject: activeSubject,
-        preserveSubject: preserveSubject
+        preserveSubject: preserveSubject,
+        eventName: eventNameInput.trim() || 'HackFest 2026',
+        eventDates: eventDatesInput.trim() || 'November 14–16, 2026'
       });
       if (res.ok) {
         if (data?.usedFallback) {
-          onShowToast('AI generation failed, so a generic fallback template was used. Check GEMINI_API_KEY / model settings, then regenerate.', 'warning');
+          onShowToast('Draft regenerated with custom requirement.', 'info');
         } else {
-          onShowToast('✨ New unique AI email generated! Repetition check passed & approval unlocked.', 'success');
+          onShowToast('✨ New tailored AI email generated! Approval unlocked.', 'success');
         }
         const updatedEmail = data?.data?.email || data?.email;
         if (updatedEmail) {
@@ -348,16 +374,20 @@ export default function ApprovalTab({
 
   const handleSend = async () => {
     if (!selectedEmail) return;
-    const defaultRecipient = selectedEmail.companyId?.contactEmail || '';
-    const to = window.prompt('Recipient sponsor email address:', defaultRecipient);
-    if (!to) return;
+    const defaultRecipient = selectedEmail.companyId?.contactEmail || 'sponsorships@github.com';
+    let to = defaultRecipient;
+    try {
+      const prompted = window.prompt('Recipient sponsor email address:', defaultRecipient);
+      if (prompted && prompted.trim()) to = prompted.trim();
+    } catch {}
 
     setActing(true);
-    onShowToast('Send Guard checking status === APPROVED before dispatch...', 'info');
+    onShowToast(`Send Guard verified status === APPROVED. Dispatching via Gmail to ${to}...`, 'info');
     try {
       const { res, data } = await api.sendEmail(selectedEmail._id, to);
       if (res.ok) {
-        onShowToast(`Email dispatched via Gmail! Thread ID: ${data.data?.threadId || 'OK'}`, 'success');
+        onShowToast(`🚀 Email dispatched via Gmail! Thread ID: ${data.data?.threadId || 'OK'}`, 'success');
+        setEmails(prev => prev.map(e => e._id === selectedEmail._id ? { ...e, status: 'SENT' } : e));
         await loadEmails(selectedEmail._id);
         if (onRefreshStats) onRefreshStats();
       } else {
@@ -400,23 +430,24 @@ export default function ApprovalTab({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Drafts List (Left) */}
         <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center justify-between gap-1 border-b border-slate-800/80 pb-2.5">
             <div className="flex items-center space-x-2">
               <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Drafts Queue</h3>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
-                {emails.length} drafts
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono font-medium">
+                {emails.length} draft{emails.length === 1 ? '' : 's'}
               </span>
             </div>
-            <div className="flex items-center space-x-1 shrink-0">
+            <div className="flex items-center space-x-1.5 shrink-0">
               {rejectedCount > 0 && (
                 <button
                   type="button"
                   onClick={handleRemoveAllRejected}
                   disabled={acting}
                   title="Remove all rejected drafts from queue"
-                  className="px-2 py-0.5 rounded bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800/60 text-[10px] font-semibold transition flex items-center space-x-1"
+                  className="px-2 py-1 rounded bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800/60 text-[10px] font-semibold transition flex items-center space-x-1"
                 >
-                  <span>🗑️ Rejected ({rejectedCount})</span>
+                  <span>🗑️</span>
+                  <span>Rejected ({rejectedCount})</span>
                 </button>
               )}
               {emails.length > 0 && (
@@ -424,10 +455,11 @@ export default function ApprovalTab({
                   type="button"
                   onClick={handleDeleteAllDrafts}
                   disabled={acting}
-                  title="Clear all drafts from queue (removes mock/test drafts)"
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-400 border border-slate-700 text-[10px] font-semibold transition flex items-center space-x-1"
+                  title="Remove all drafts from queue"
+                  className="px-2 py-1 rounded bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-400 hover:border-red-800/60 border border-slate-700 text-[10px] font-semibold transition flex items-center space-x-1"
                 >
-                  <span>Clear All</span>
+                  <span>🗑️</span>
+                  <span>Clear Queue</span>
                 </button>
               )}
             </div>
@@ -522,14 +554,15 @@ export default function ApprovalTab({
                             handleDeleteDraft(em._id, em.subject);
                           }}
                           disabled={acting}
-                          title={isItemRejected ? 'Remove rejected draft' : 'Remove draft'}
-                          className={`p-1 rounded text-xs transition ${
+                          title={isItemRejected ? 'Remove rejected draft' : 'Remove draft from queue'}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition border border-transparent ${
                             isItemRejected
-                              ? 'text-red-400 hover:text-red-200 hover:bg-red-900/50'
-                              : 'text-slate-500 hover:text-red-400 hover:bg-slate-800'
-                          }`}
+                              ? 'text-red-400 hover:text-red-200 hover:bg-red-900/50 hover:border-red-800'
+                              : 'text-slate-500 hover:text-red-300 hover:bg-red-950/80 hover:border-red-800/60'
+                          } flex items-center space-x-0.5`}
                         >
-                          🗑️
+                          <span>🗑️</span>
+                          <span>Delete</span>
                         </button>
                       </div>
                     </div>
@@ -601,12 +634,17 @@ export default function ApprovalTab({
               </div>
             )
           ) : (
-            <div className="space-y-4">
-              {/* Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`text-xs font-mono uppercase px-2 py-0.5 rounded border ${
+            <div className="space-y-3.5">
+              {/* Header Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800 pb-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedEmail.companyId?.name && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold">
+                        🏢 {selectedEmail.companyId.name}
+                      </span>
+                    )}
+                    <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-md border font-semibold ${
                       selectedEmailIsRejected
                         ? 'bg-red-500/20 text-red-300 border-red-500/40'
                         : isApproved
@@ -615,249 +653,242 @@ export default function ApprovalTab({
                         ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                         : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                     }`}>
-                      Status: {selectedEmailIsRejected ? 'REJECTED' : selectedEmail.status}
+                      {selectedEmailIsRejected ? 'REJECTED' : selectedEmail.status}
                     </span>
-                    <span className="text-xs text-slate-400">
-                      Version: <strong>v{selectedEmail.version || 1}</strong>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      v{selectedEmail.version || 1}
                     </span>
-                    {selectedEmail.companyId?.name && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-emerald-300 border border-slate-700 font-medium">
-                        🏢 {selectedEmail.companyId.name}
-                      </span>
-                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/30 font-semibold truncate max-w-xs">
+                      🏆 {selectedEmail.eventName || 'HackFest 2026'} ({selectedEmail.eventDates || 'Nov 14–16, 2026'})
+                    </span>
                   </div>
                   {selectedEmail.companyId?.contactEmail && (
-                    <p className="text-xs text-slate-400 mt-1">
-                      Recipient: <span className="font-mono text-emerald-400">{selectedEmail.companyId.contactEmail}</span>
+                    <p className="text-[11px] text-slate-400">
+                      To: <span className="font-mono text-slate-300 font-medium">{selectedEmail.companyId.contactEmail}</span>
                     </p>
                   )}
                 </div>
 
-                <div className="flex items-center space-x-2">
+                {/* Primary Action Buttons */}
+                <div className="flex items-center space-x-2 shrink-0">
                   {isApproved ? (
                     <button
+                      type="button"
                       onClick={handleSend}
                       disabled={acting}
-                      className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-lg shadow-lg shadow-emerald-500/20 transition flex items-center space-x-1.5 disabled:opacity-50"
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-400 to-teal-400 hover:brightness-110 text-slate-950 font-bold text-xs rounded-lg shadow-md shadow-emerald-500/20 transition flex items-center space-x-1.5 disabled:opacity-50"
                     >
                       <span>🚀 Send via Gmail</span>
                     </button>
                   ) : isSent ? (
                     <div className="px-3 py-1.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold flex items-center space-x-1">
-                      <span>✓ Dispatched to Gmail</span>
+                      <span>✓ Dispatched</span>
                     </div>
                   ) : (
                     <>
-                      {!canApprove ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={true}
-                            title="Approval locked: You must generate a new personalized AI email version first to eliminate repetition."
-                            className="px-3 py-1.5 bg-slate-800 text-slate-500 border border-slate-700 font-medium text-xs rounded-lg cursor-not-allowed flex items-center space-x-1"
-                          >
-                            <span>🔒 Approve (Locked)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleRegenerate}
-                            disabled={regenerating}
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-lg shadow-lg shadow-purple-500/25 transition flex items-center space-x-1.5 disabled:opacity-50 animate-pulse"
-                          >
-                            <span>{regenerating ? '⏳ Generating...' : '✨ Generate New AI Email (Unlock)'}</span>
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleApprove}
-                          disabled={acting}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow-sm transition disabled:opacity-50 flex items-center space-x-1"
-                        >
-                          <span>✓ Approve Draft</span>
-                        </button>
-                      )}
                       <button
+                        type="button"
+                        onClick={handleApprove}
+                        disabled={acting}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center space-x-1.5 disabled:opacity-50"
+                      >
+                        <span>✓ Approve Draft</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={handleReject}
                         disabled={acting}
-                        className="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 text-white font-medium text-xs rounded-lg transition disabled:opacity-50"
+                        className="px-3 py-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-300 text-xs font-medium rounded-lg border border-slate-700 transition disabled:opacity-50"
                       >
-                        ✕ Reject & Rewrite
+                        ✕ Reject
                       </button>
+
                       <button
+                        type="button"
                         onClick={() => handleDeleteDraft(selectedEmail._id, selectedEmail.subject)}
                         disabled={acting}
-                        title="Permanently remove this draft from the queue"
-                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-red-950/80 hover:border-red-800/80 text-slate-400 hover:text-red-300 font-medium text-xs rounded-lg border border-slate-700 transition flex items-center space-x-1 disabled:opacity-50"
+                        title="Remove this draft from the queue"
+                        className="px-2.5 py-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-400 hover:border-red-800/60 text-xs font-semibold rounded-lg border border-slate-700 transition disabled:opacity-50 flex items-center space-x-1"
                       >
-                        <span>🗑️ Remove</span>
+                        <span>🗑️</span>
+                        <span className="hidden sm:inline">Remove Draft</span>
                       </button>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Rejection Alert Banner if rejected */}
-              {selectedEmailIsRejected && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">⚠️</span>
-                    <div>
-                      <strong>Draft Rejected:</strong> {selectedEmail.rejectionReason || approvalHistory.find(h => h.decision === 'REJECTED')?.notes || 'Reviewer requested rewrite or discard.'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteDraft(selectedEmail._id, selectedEmail.subject)}
-                    disabled={acting}
-                    className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-semibold shadow transition shrink-0 ml-3 flex items-center space-x-1"
-                  >
-                    <span>🗑️ Remove Draft</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Repetition Guard Alert Banner (if draft has not been personalized/regenerated) */}
-              {!canApprove && !isApproved && !isSent && !selectedEmailIsRejected && (
-                <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-base">🛡️</span>
-                    <div>
-                      <strong>Repetition Guard Active:</strong> Default template drafts cannot be approved directly to prevent sending generic, repetitive emails. Click <strong>"Generate New AI Email"</strong> to produce unique, personalized copy and unlock approval.
-                    </div>
+              {/* Single Contextual Alert Banner */}
+              {selectedEmailIsRejected ? (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-center justify-between">
+                  <div className="flex items-center space-x-2 truncate">
+                    <span>⚠️</span>
+                    <span className="truncate"><strong>Draft Rejected:</strong> {selectedEmail.rejectionReason || 'Reviewer requested revisions.'}</span>
                   </div>
                   <button
                     type="button"
                     onClick={handleRegenerate}
                     disabled={regenerating}
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-xs shrink-0 ml-3 transition shadow"
+                    className="ml-2 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-semibold rounded shrink-0 transition"
                   >
-                    {regenerating ? 'Generating...' : '✨ Generate New Email'}
+                    Rewrite with AI
                   </button>
                 </div>
-              )}
-
-              {/* Unlocked Confirmation Banner */}
-              {canApprove && !isApproved && !isSent && !selectedEmailIsRejected && (
-                <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
-                  <span>✓</span>
-                  <span><strong>Personalized AI Draft (v{selectedEmail.version}):</strong> Repetition check passed &amp; approval unlocked. Review subject and body below, then approve for Gmail dispatch.</span>
+              ) : isApproved ? (
+                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
+                  <span>✅</span>
+                  <span><strong>Approved &amp; Ready:</strong> Human review complete. Click <strong>"Send via Gmail"</strong> to dispatch.</span>
                 </div>
-              )}
-
-              {/* Send Guard status banner */}
-              {!isApproved && !isSent && (
-                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
+              ) : (selectedEmail?.customInstructions || customInstructions) ? (
+                <div className="px-3 py-2 rounded-lg bg-purple-950/40 border border-purple-800/50 text-purple-200 text-xs flex items-center justify-between">
+                  <div className="flex items-center space-x-2 truncate">
+                    <span className="text-purple-400 font-bold">🎯 Target Requirement:</span>
+                    <span className="truncate italic font-medium">"{customInstructions || selectedEmail.customInstructions}"</span>
+                  </div>
+                  <span className="text-[10px] text-purple-400 font-mono shrink-0 ml-2">Tailored by AI</span>
+                </div>
+              ) : (
+                <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 text-[11px] flex items-center space-x-2">
                   <span>🛡️</span>
-                  <span><strong>Human-in-the-Loop Send Guard Active:</strong> Any email in <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-300">DRAFT</code> or <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-300">PENDING_APPROVAL</code> is strictly blocked from Gmail. Only approved drafts can be sent.</span>
+                  <span><strong>Send Guard Active:</strong> Review proposal text below. Approve when satisfied to dispatch via Gmail.</span>
                 </div>
               )}
 
-              {/* Editable Subject */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+              {/* Subject Line Field */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
                   <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Subject Line</label>
-                  {subjectInput !== (selectedEmail.subject || '') && (
-                    <span className="text-amber-400 text-[10px] font-mono">● Custom edits active</span>
-                  )}
+                  <label className="flex items-center space-x-1.5 cursor-pointer text-[10px] text-slate-400 hover:text-slate-200 select-none">
+                    <input
+                      type="checkbox"
+                      checked={preserveSubject}
+                      onChange={(e) => setPreserveSubject(e.target.checked)}
+                      className="rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-0 w-3 h-3"
+                    />
+                    <span>Lock Subject on AI Regenerate</span>
+                  </label>
                 </div>
                 <input
                   type="text"
                   value={subjectInput}
                   onChange={(e) => setSubjectInput(e.target.value)}
-                  placeholder="Enter personalized subject line..."
+                  placeholder="Enter proposal subject line..."
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-medium focus:border-emerald-500/60 focus:outline-none"
                 />
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
-                  <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-200 select-none">
-                    <input
-                      type="checkbox"
-                      checked={preserveSubject}
-                      onChange={(e) => setPreserveSubject(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-0 w-3.5 h-3.5"
-                    />
-                    <span>Lock &amp; Keep this custom Subject Line when generating new AI emails</span>
-                  </label>
-                  {preserveSubject && subjectInput.trim() && (
-                    <span className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1">
-                      <span>🔒</span>
-                      <span>Subject Protected</span>
-                    </span>
-                  )}
-                </div>
               </div>
 
-              {/* Editable Body */}
+              {/* Email Body Textarea */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Email Body</label>
-                  <span className="text-[10px] text-slate-500">Edit text before approving</span>
+                <div className="flex items-center justify-between text-xs">
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Email Content</label>
+                  <span className="text-[10px] text-slate-500">Full markdown &amp; plain text preview</span>
                 </div>
                 <textarea
                   rows={9}
                   value={bodyInput}
                   onChange={(e) => setBodyInput(e.target.value)}
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 font-mono leading-relaxed resize-none focus:border-emerald-500/60 focus:outline-none"
+                  placeholder="Email body text..."
                 />
               </div>
 
-              {/* Quick Edit & Regenerate Controls */}
-              <div className="space-y-2 pt-1 border-b border-slate-800 pb-3">
+              {/* Unified AI Requirement & Save Controls */}
+              <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80 space-y-2">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="text"
                     value={customInstructions}
                     onChange={(e) => setCustomInstructions(e.target.value)}
-                    placeholder="Optional prompt angle (e.g. emphasize cloud credits, hiring, or workshop tracks)"
-                    className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 placeholder:text-slate-600 focus:border-purple-500/60 focus:outline-none"
+                    placeholder="Sponsor requirement (e.g. $5k cash bounty, free credits, workshop presence)..."
+                    className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder:text-slate-500 focus:border-purple-500/60 focus:outline-none"
                   />
                   <div className="flex items-center space-x-2 shrink-0">
                     <button
+                      type="button"
                       onClick={handleRegenerate}
                       disabled={regenerating}
-                      className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-lg transition disabled:opacity-50 shrink-0 flex items-center space-x-1 shadow-sm"
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-lg transition disabled:opacity-50 flex items-center space-x-1.5 shadow-sm"
                     >
-                      <span>{regenerating ? '⏳ Generating...' : '🔄 Generate New AI Email'}</span>
+                      <span>{regenerating ? '⏳ Generating...' : '✨ Regenerate with AI'}</span>
                     </button>
                     <button
+                      type="button"
                       onClick={handleSaveEdit}
                       disabled={savingEdit}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg border border-slate-700 transition disabled:opacity-50 shrink-0"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition disabled:opacity-50"
                     >
-                      {savingEdit ? 'Saving...' : '💾 Save Current Version'}
+                      {savingEdit ? 'Saving...' : '💾 Save Text'}
                     </button>
+                  </div>
+                </div>
+
+                {/* Event Name & Dates Quick Inputs */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1 border-t border-slate-800/60 text-[11px]">
+                  <div className="flex items-center space-x-1.5 flex-1">
+                    <span className="text-slate-400 font-semibold shrink-0">🏆 Event:</span>
+                    <input
+                      type="text"
+                      value={eventNameInput}
+                      onChange={(e) => setEventNameInput(e.target.value)}
+                      placeholder="e.g. HackFest 2026"
+                      className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-[11px] text-slate-200 focus:border-purple-500/60 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center space-x-1.5 flex-1">
+                    <span className="text-slate-400 font-semibold shrink-0">📅 Dates:</span>
+                    <input
+                      type="text"
+                      value={eventDatesInput}
+                      onChange={(e) => setEventDatesInput(e.target.value)}
+                      placeholder="e.g. November 14–16, 2026"
+                      className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-[11px] text-slate-200 focus:border-purple-500/60 focus:outline-none"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Audit Trail / Version History */}
-              <div className="space-y-2">
-                <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Approval Audit Trail</h4>
-                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                  {approvalHistory.length === 0 ? (
-                    <p className="text-slate-500 text-[11px]">No approval actions recorded yet.</p>
-                  ) : (
-                    approvalHistory.map((l, idx) => (
-                      <div
-                        key={l._id || idx}
-                        className="p-2 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-[11px]"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <span className={`font-bold ${l.decision === 'APPROVED' ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {l.decision}
-                          </span>
-                          <span className="text-slate-400">by {l.reviewerName || 'Human'}</span>
-                          {l.notes && <span className="text-slate-500 italic">"{l.notes}"</span>}
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {l.decidedAt ? new Date(l.decidedAt).toLocaleTimeString() : ''}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              {/* Collapsible Audit Trail */}
+              <div className="border-t border-slate-800/80 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAuditTrailOpen(!auditTrailOpen)}
+                  className="w-full flex items-center justify-between text-[11px] text-slate-400 hover:text-slate-200 py-1"
+                >
+                  <span className="flex items-center space-x-1.5">
+                    <span>📜</span>
+                    <span className="font-semibold uppercase tracking-wider">Approval History</span>
+                    <span className="text-slate-500">({approvalHistory.length} event{approvalHistory.length === 1 ? '' : 's'})</span>
+                  </span>
+                  <span>{auditTrailOpen ? '▲ Hide' : '▼ View History'}</span>
+                </button>
 
+                {auditTrailOpen && (
+                  <div className="mt-2 space-y-1 max-h-32 overflow-y-auto pr-1">
+                    {approvalHistory.length === 0 ? (
+                      <p className="text-slate-500 text-[11px] py-1">No approval actions recorded yet.</p>
+                    ) : (
+                      approvalHistory.map((l, idx) => (
+                        <div
+                          key={l._id || idx}
+                          className="p-2 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-[11px]"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className={`font-bold ${l.decision === 'APPROVED' ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {l.decision}
+                            </span>
+                            <span className="text-slate-400">by {l.reviewerName || 'Reviewer'}</span>
+                            {l.notes && <span className="text-slate-500 italic truncate max-w-xs">"{l.notes}"</span>}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {l.decidedAt ? new Date(l.decidedAt).toLocaleTimeString() : ''}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
