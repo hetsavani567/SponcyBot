@@ -14,12 +14,13 @@ export default function AuthModal({
   // Form states
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [signinRole, setSigninRole] = useState('Organizer');
 
   const [signupName, setSignupName] = useState('');
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
-  const [signupRole, setSignupRole] = useState('Sponsorship Lead');
+  const [signupRole, setSignupRole] = useState('Organizer');
 
   if (!isOpen) return null;
 
@@ -33,10 +34,15 @@ export default function AuthModal({
 
     setLoading(true);
     try {
-      const { res, data } = await api.signin(usernameOrEmail, password);
+      const { res, data } = await api.signin(usernameOrEmail, password, signinRole);
       if (res.ok && data?.data?.user) {
-        onShowToast(`Welcome back, ${data.data.user.name}!`, 'success');
-        if (onAuthSuccess) onAuthSuccess(data.data.user);
+        const authenticatedUser = {
+          ...data.data.user,
+          role: signinRole || data.data.user.role || 'Organizer'
+        };
+        api.setActiveRole(authenticatedUser.role);
+        onShowToast(`Welcome back, ${authenticatedUser.name}! Signed in as ${authenticatedUser.role}.`, 'success');
+        if (onAuthSuccess) onAuthSuccess(authenticatedUser);
         onClose();
       } else {
         setErrorMessage(data?.message || 'Invalid username or password.');
@@ -76,8 +82,13 @@ export default function AuthModal({
       });
 
       if (res.ok && data?.data?.user) {
-        onShowToast(`Account created! Welcome, ${data.data.user.name}.`, 'success');
-        if (onAuthSuccess) onAuthSuccess(data.data.user);
+        const authenticatedUser = {
+          ...data.data.user,
+          role: signupRole || data.data.user.role || 'Organizer'
+        };
+        api.setActiveRole(authenticatedUser.role);
+        onShowToast(`Account created! Welcome, ${authenticatedUser.name}. Signed in as ${authenticatedUser.role}.`, 'success');
+        if (onAuthSuccess) onAuthSuccess(authenticatedUser);
         onClose();
       } else {
         setErrorMessage(data?.message || 'Failed to create account.');
@@ -89,9 +100,10 @@ export default function AuthModal({
     }
   };
 
-  const handleQuickDemoFill = (uname, pass) => {
+  const handleQuickDemoFill = (uname, pass, role = 'Organizer') => {
     setUsernameOrEmail(uname);
     setPassword(pass);
+    setSigninRole(role);
     setErrorMessage('');
   };
 
@@ -176,31 +188,50 @@ export default function AuthModal({
               />
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+                <span>Select Your Role</span>
+                <span className="text-[10px] text-emerald-400 font-normal">Active session role</span>
+              </label>
+              <select
+                value={signinRole}
+                onChange={(e) => setSigninRole(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+              >
+                <option value="Organizer">👑 Organizer (Full Access & Sponsor Management)</option>
+                <option value="Outreach Coordinator">📋 Outreach Coordinator (Outreach CRM & Follow-ups)</option>
+                <option value="Sponsorship Lead">💼 Sponsorship Lead</option>
+                <option value="Partnerships Director">🤝 Partnerships Director</option>
+              </select>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg transition shadow-md disabled:opacity-50"
             >
-              {loading ? 'Verifying Credentials...' : 'Sign In as Organizer'}
+              {loading ? 'Verifying Credentials...' : `Sign In as ${signinRole}`}
             </button>
 
             {/* Quick Demo Credentials */}
             <div className="pt-2 border-t border-slate-800/80">
-              <p className="text-[11px] text-slate-400 mb-2">Quick 1-Click Demo Organizer Login:</p>
+              <p className="text-[11px] text-slate-400 mb-2">Quick 1-Click Demo Login:</p>
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
-                  onClick={() => handleQuickDemoFill('organizer', 'password123')}
+                  onClick={() => handleQuickDemoFill('organizer', 'password123', 'Organizer')}
                   className="px-2.5 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-[11px] font-mono text-emerald-400 transition"
+                  title="Sign in with Organizer permissions"
                 >
-                  ⚡ organizer / password123
+                  👑 organizer (Organizer)
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleQuickDemoFill('admin', 'password123')}
+                  onClick={() => handleQuickDemoFill('admin', 'password123', 'Outreach Coordinator')}
                   className="px-2.5 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-[11px] font-mono text-blue-400 transition"
+                  title="Sign in with Outreach Coordinator permissions"
                 >
-                  ⚡ admin / password123
+                  📋 admin (Coordinator)
                 </button>
               </div>
             </div>
@@ -238,12 +269,12 @@ export default function AuthModal({
                 <select
                   value={signupRole}
                   onChange={(e) => setSignupRole(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
                 >
-                  <option value="Sponsorship Lead">Sponsorship Lead</option>
-                  <option value="Partnerships Director">Partnerships Director</option>
-                  <option value="Outreach Coordinator">Outreach Coordinator</option>
-                  <option value="Organizer">Organizer</option>
+                  <option value="Organizer">👑 Organizer</option>
+                  <option value="Outreach Coordinator">📋 Outreach Coordinator</option>
+                  <option value="Sponsorship Lead">💼 Sponsorship Lead</option>
+                  <option value="Partnerships Director">🤝 Partnerships Director</option>
                 </select>
               </div>
             </div>

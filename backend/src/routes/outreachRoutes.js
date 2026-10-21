@@ -12,7 +12,8 @@ const {
   getCommsHistory,
   getDashboardStatsHandler,
   handleGmailWebhook,
-  exportOutreachCSV
+  exportOutreachCSV,
+  deleteOutreach
 } = require("../controllers/outreachController");
 
 // Exact routes first (to prevent :id collision)
@@ -28,6 +29,7 @@ router.post("/", createOutreach);
 
 // Parameterized item routes
 router.get("/:id", getOutreachById);
+router.delete("/:id", deleteOutreach);
 router.post("/:id/followup", registerFollowUp);
 router.post("/:id/close", closeOutreachHandler);
 router.patch("/:id/status", updateStatusHandler);

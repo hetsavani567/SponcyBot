@@ -15,7 +15,7 @@
     "seed:outreach": "cd backend && npm run seed:outreach",
     "db:clear": "cd backend && npm run db:clear",
     "clear:drafts": "cd backend && npm run clear:drafts",
-    "test": "cd backend && node src/scripts/testOutreachLogic.js && node src/scripts/testDeleteRejectedDraft.js && node src/scripts/testPerformanceOptimizations.js"
+    "test": "cd backend && node src/scripts/testOutreachLogic.js && node src/scripts/testDeleteRejectedDraft.js && node src/scripts/testPerformanceOptimizations.js && node src/scripts/testAutoDeliverAndOutreach.js && node src/scripts/testOutreachReplyAndRemove.js && node src/scripts/testRolePermissionsAndCRMStatus.js && node src/scripts/testInspectAndPreparedChat.js"
   },
   "keywords": [
     "sponsorship",

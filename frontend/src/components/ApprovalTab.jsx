@@ -183,16 +183,18 @@ export default function ApprovalTab({
     if (!selectedEmail) return;
 
     setActing(true);
-    onShowToast('✓ Approving proposal for Gmail dispatch...', 'info');
+    const targetEmailAddress = selectedEmail.companyId?.contactEmail || 'sponsor';
+    onShowToast(`🚀 Approving & delivering proposal to ${targetEmailAddress}...`, 'info');
     try {
       const { res, data } = await api.approveEmail(selectedEmail._id, 'Partnerships Director');
       if (res.ok) {
-        onShowToast('Email approved! Send Guard now permits outbound send.', 'success');
-        setEmails(prev => prev.map(e => e._id === selectedEmail._id ? { ...e, status: 'APPROVED', isApproved: true } : e));
+        const recipient = data?.data?.recipient || data?.data?.delivery?.recipient || targetEmailAddress;
+        onShowToast(`✓ Email approved & delivered to ${recipient}! Outreach CRM active.`, 'success');
+        setEmails(prev => prev.map(e => e._id === selectedEmail._id ? { ...e, status: 'SENT', isApproved: true } : e));
         await loadEmails(selectedEmail._id);
         if (onRefreshStats) onRefreshStats();
       } else {
-        onShowToast(data?.message || 'Approval failed', 'error');
+        onShowToast(data?.message || 'Approval and delivery failed', 'error');
       }
     } catch (err) {
       onShowToast(err.message, 'error');
@@ -682,7 +684,7 @@ export default function ApprovalTab({
                     </button>
                   ) : isSent ? (
                     <div className="px-3 py-1.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold flex items-center space-x-1">
-                      <span>✓ Dispatched</span>
+                      <span>✓ Dispatched &amp; CRM Active</span>
                     </div>
                   ) : (
                     <>
@@ -690,9 +692,9 @@ export default function ApprovalTab({
                         type="button"
                         onClick={handleApprove}
                         disabled={acting}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center space-x-1.5 disabled:opacity-50"
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center space-x-1.5 disabled:opacity-50"
                       >
-                        <span>✓ Approve Draft</span>
+                        <span>{acting ? '🚀 Delivering...' : '✓ Approve & Send to Sponsor'}</span>
                       </button>
 
                       <button
@@ -735,6 +737,22 @@ export default function ApprovalTab({
                     Rewrite with AI
                   </button>
                 </div>
+              ) : isSent ? (
+                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs flex items-center justify-between">
+                  <div className="flex items-center space-x-2 truncate">
+                    <span>🚀</span>
+                    <span className="truncate"><strong>Dispatched &amp; CRM Active:</strong> Delivered to sponsor. Automated follow-up registered in Outreach CRM.</span>
+                  </div>
+                  {onSwitchTab && (
+                    <button
+                      type="button"
+                      onClick={() => onSwitchTab('outreach')}
+                      className="ml-2 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold rounded shrink-0 transition"
+                    >
+                      View CRM &rarr;
+                    </button>
+                  )}
+                </div>
               ) : isApproved ? (
                 <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
                   <span>✅</span>
@@ -750,8 +768,8 @@ export default function ApprovalTab({
                 </div>
               ) : (
                 <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 text-[11px] flex items-center space-x-2">
-                  <span>🛡️</span>
-                  <span><strong>Send Guard Active:</strong> Review proposal text below. Approve when satisfied to dispatch via Gmail.</span>
+                  <span>⚡</span>
+                  <span><strong>Instant Delivery:</strong> Approving this proposal will immediately dispatch it to the sponsor's email and create an active Outreach CRM record.</span>
                 </div>
               )}
 

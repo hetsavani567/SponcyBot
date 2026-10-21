@@ -575,9 +575,10 @@ const autoSeedDatabase = async () => {
     // 5. Seed Gmail Threads
     for (let i = 0; i < defaultThreads.length; i++) {
       const t = defaultThreads[i];
-      const comp = savedCompanies[i % savedCompanies.length];
-      const out = savedOutreaches[i % savedOutreaches.length];
-      const email = savedEmails[i] ? savedEmails[i]._id : null;
+      const targetCompName = t.companyId?.name || t.companyId?.company;
+      const comp = (targetCompName && savedCompanies.find(c => c.name === targetCompName)) || savedCompanies[i % savedCompanies.length];
+      const out = (comp && savedOutreaches.find(o => String(o.companyId) === String(comp._id))) || savedOutreaches[i % savedOutreaches.length];
+      const email = (comp && savedEmails.find(e => String(e.companyId) === String(comp._id))) || (savedEmails[i] ? savedEmails[i]._id : null);
 
       await GmailThread.findOneAndUpdate(
         { threadId: t.threadId },

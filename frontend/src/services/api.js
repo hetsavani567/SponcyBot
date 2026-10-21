@@ -22,6 +22,45 @@ export const setCachedData = (url, data, ttlMs = 15000) => {
   clientCache.set(url, { data, res: { ok: true, status: 200 }, expiresAt });
 };
 
+export const isOrganizer = (role) => {
+  if (!role) return false;
+  const r = String(role).toLowerCase().trim();
+  if (r.includes('coordinator')) return false;
+  return r.includes('organizer') || r.includes('lead') || r.includes('director') || r.includes('admin') || r === 'organizer';
+};
+
+export const isOutreachCoordinator = (role) => {
+  if (!role) return false;
+  const r = String(role).toLowerCase().trim();
+  return r.includes('outreach') || r.includes('coordinator');
+};
+
+export const getActiveRole = () => {
+  if (typeof localStorage === 'undefined') return 'Organizer';
+  const explicit = localStorage.getItem('SPONCY_ACTIVE_ROLE');
+  if (explicit) return explicit;
+  try {
+    const stored = localStorage.getItem('SPONCY_AUTH_USER');
+    if (stored) {
+      const u = JSON.parse(stored);
+      if (u?.role) return u.role;
+    }
+  } catch {}
+  return 'Organizer';
+};
+
+export const setActiveRole = (role) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('SPONCY_ACTIVE_ROLE', role);
+    try {
+      const stored = localStorage.getItem('SPONCY_AUTH_USER');
+      const user = stored ? JSON.parse(stored) : {};
+      user.role = role;
+      localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(user));
+    } catch {}
+  }
+};
+
 export async function safeFetchJson(url, options = {}) {
   // Support custom backend base URL if frontend is hosted separately
   const baseUrl = window.API_BASE_URL || localStorage.getItem('SPONCY_API_BASE_URL') || '';
@@ -41,11 +80,19 @@ export async function safeFetchJson(url, options = {}) {
     }
   }
 
-  // Automatically attach auth token if logged in
+  // Automatically attach auth token & active role header if available
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('SPONCY_AUTH_TOKEN') : null;
+  const activeRole = typeof localStorage !== 'undefined' ? (localStorage.getItem('SPONCY_ACTIVE_ROLE') || (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('SPONCY_AUTH_USER'));
+      return u?.role;
+    } catch { return null; }
+  })() || 'Organizer') : 'Organizer';
+
   const mergedHeaders = {
     ...(options.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeRole ? { 'x-user-role': activeRole } : {})
   };
   const finalOptions = { ...options, headers: mergedHeaders };
 
@@ -153,20 +200,28 @@ export const api = {
     if (res.ok && data?.data?.token) {
       localStorage.setItem('SPONCY_AUTH_TOKEN', data.data.token);
       localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(data.data.user));
+      if (data.data.user?.role) {
+        localStorage.setItem('SPONCY_ACTIVE_ROLE', data.data.user.role);
+      }
     }
     invalidateCache('/auth');
     return { res, data };
   },
 
-  signin: async (usernameOrEmail, password) => {
+  signin: async (usernameOrEmail, password, role) => {
+    const payload = { usernameOrEmail, password };
+    if (role) payload.role = role;
     const { res, data } = await safeFetchJson('/auth/signin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernameOrEmail, password })
+      body: JSON.stringify(payload)
     });
     if (res.ok && data?.data?.token) {
       localStorage.setItem('SPONCY_AUTH_TOKEN', data.data.token);
       localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(data.data.user));
+      if (data.data.user?.role) {
+        localStorage.setItem('SPONCY_ACTIVE_ROLE', data.data.user.role);
+      }
     }
     invalidateCache('/auth');
     return { res, data };
@@ -193,6 +248,7 @@ export const api = {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('SPONCY_AUTH_TOKEN');
       localStorage.removeItem('SPONCY_AUTH_USER');
+      localStorage.removeItem('SPONCY_ACTIVE_ROLE');
     }
     invalidateCache('/auth');
     try {
@@ -208,6 +264,45 @@ export const api = {
     } catch {
       return null;
     }
+  },
+
+  getActiveRole: () => {
+    if (typeof localStorage === 'undefined') return 'Organizer';
+    const explicit = localStorage.getItem('SPONCY_ACTIVE_ROLE');
+    if (explicit) return explicit;
+    try {
+      const stored = localStorage.getItem('SPONCY_AUTH_USER');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u?.role) return u.role;
+      }
+    } catch {}
+    return 'Organizer';
+  },
+
+  setActiveRole: (role) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('SPONCY_ACTIVE_ROLE', role);
+      try {
+        const stored = localStorage.getItem('SPONCY_AUTH_USER');
+        const user = stored ? JSON.parse(stored) : {};
+        user.role = role;
+        localStorage.setItem('SPONCY_AUTH_USER', JSON.stringify(user));
+      } catch {}
+    }
+  },
+
+  isOrganizer: (role) => {
+    if (!role) return false;
+    const r = String(role).toLowerCase().trim();
+    if (r.includes('coordinator')) return false;
+    return r.includes('organizer') || r.includes('lead') || r.includes('director') || r.includes('admin') || r === 'organizer';
+  },
+
+  isOutreachCoordinator: (role) => {
+    if (!role) return false;
+    const r = String(role).toLowerCase().trim();
+    return r.includes('outreach') || r.includes('coordinator');
   },
 
   // System Stats
@@ -346,6 +441,9 @@ export const api = {
       })
     });
     invalidateCache('/emails');
+    invalidateCache('/outreach');
+    invalidateCache('/outreach/stats');
+    invalidateCache('/gmail/threads');
     invalidateCache('/gmail/stats');
     invalidateCache('/api/bootstrap');
     return { res, data };
@@ -491,6 +589,17 @@ export const api = {
       body: JSON.stringify({ reason })
     });
     invalidateCache('/outreach');
+    invalidateCache('/gmail/stats');
+    invalidateCache('/api/bootstrap');
+    return { res, data };
+  },
+
+  deleteOutreach: async (outreachId) => {
+    const { res, data } = await safeFetchJson(`/outreach/${outreachId}`, {
+      method: 'DELETE'
+    });
+    invalidateCache('/outreach');
+    invalidateCache('/outreach/stats');
     invalidateCache('/gmail/stats');
     invalidateCache('/api/bootstrap');
     return { res, data };

@@ -10,6 +10,8 @@ export default function OutreachTab({
   onViewThread,
   refreshTrigger = 0
 }) {
+  const activeRole = api.getActiveRole();
+  const canDeleteOutreach = api.isOutreachCoordinator(activeRole);
   const [outreaches, setOutreaches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filterMode, setFilterMode] = useState('all');
@@ -45,11 +47,9 @@ export default function OutreachTab({
     }
   };
 
-  const handleChangeStatus = async (outreachId) => {
-    const allowed = ['WAITING FOR REPLY', 'INTERESTED', 'MEETING', 'DECLINED', 'CLOSED'];
-    const newStatus = window.prompt(`Enter new status (${allowed.join(', ')}):`, 'INTERESTED');
-    if (!newStatus || !allowed.includes(newStatus)) return;
-
+  const handleUpdateStatusDirect = async (outreachId, newStatus) => {
+    if (!outreachId || !newStatus) return;
+    setOutreaches(prev => prev.map(o => o._id === outreachId ? { ...o, status: newStatus } : o));
     try {
       const { res, data } = await api.updateOutreachStatus(outreachId, newStatus);
       if (res.ok) {
@@ -57,26 +57,55 @@ export default function OutreachTab({
         loadOutreach();
         if (onRefreshStats) onRefreshStats();
       } else {
-        onShowToast(data.message || 'Status update failed', 'error');
+        onShowToast(data?.message || 'Status update failed', 'error');
+        loadOutreach();
       }
     } catch (err) {
       onShowToast(err.message, 'error');
+      loadOutreach();
     }
   };
 
-  const handleCloseOutreach = async (outreachId) => {
-    const reason = window.prompt('Reason for closing outreach:', 'Unresponsive after max follow-ups') || 'Closed by organizer';
+  const handleCloseOutreach = async (outreachId, companyName = 'Sponsor') => {
+    setOutreaches(prev => prev.map(o => o._id === outreachId ? { ...o, status: 'CLOSED', closedReason: 'Closed by organizer' } : o));
     try {
-      const { res, data } = await api.closeOutreach(outreachId, reason);
+      const { res, data } = await api.closeOutreach(outreachId, 'Closed by organizer');
       if (res.ok) {
-        onShowToast('Outreach closed successfully.', 'info');
+        onShowToast(`Outreach for ${companyName} closed.`, 'info');
         loadOutreach();
         if (onRefreshStats) onRefreshStats();
       } else {
-        onShowToast(data.message || 'Failed to close outreach', 'error');
+        onShowToast(data?.message || 'Failed to close outreach', 'error');
+        loadOutreach();
       }
     } catch (err) {
       onShowToast(err.message, 'error');
+      loadOutreach();
+    }
+  };
+
+  const handleDeleteOutreach = async (outreachId, companyName = 'Sponsor') => {
+    if (!outreachId) return;
+    const currentRole = api.getActiveRole();
+    if (!api.isOutreachCoordinator(currentRole)) {
+      onShowToast('Permission Denied: Only Outreach Coordinators can remove outreach CRM records.', 'error');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to remove outreach for ${companyName}?`)) return;
+    setOutreaches(prev => prev.filter(o => o._id !== outreachId));
+    try {
+      const { res, data } = await api.deleteOutreach(outreachId);
+      if (res.ok) {
+        onShowToast(`Outreach for ${companyName} removed successfully.`, 'info');
+        loadOutreach();
+        if (onRefreshStats) onRefreshStats();
+      } else {
+        onShowToast(data?.message || 'Failed to remove outreach', 'error');
+        loadOutreach();
+      }
+    } catch (err) {
+      onShowToast(err.message, 'error');
+      loadOutreach();
     }
   };
 
@@ -190,7 +219,9 @@ export default function OutreachTab({
                     SENT: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
                     'WAITING FOR REPLY': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
                     INTERESTED: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                    APPROVED: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
                     MEETING: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+                    'OUT OF OFFICE': 'bg-orange-500/20 text-orange-300 border-orange-500/40',
                     'FOLLOW-UP 1': 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
                     'FOLLOW-UP 2': 'bg-pink-500/20 text-pink-300 border-pink-500/40',
                     DECLINED: 'bg-red-500/20 text-red-300 border-red-500/40',
@@ -210,7 +241,7 @@ export default function OutreachTab({
                         {o.memberId?.name || 'Unassigned'}
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-mono border ${statusBadge}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono border ${statusBadge}`}>
                           {o.status}
                         </span>
                       </td>
@@ -255,10 +286,11 @@ export default function OutreachTab({
 
                           <button
                             onClick={() => onOpenSimulateReply(o._id, o.threadId || '', compName)}
-                            title="Simulate Sponsor Inbound Reply"
-                            className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px]"
+                            title="Record Sponsor Inbound Reply (Approved, Denied, Out of Office)"
+                            className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded border border-emerald-500/30 transition text-[11px] flex items-center space-x-1"
                           >
-                            💬 Reply
+                            <span>💬</span>
+                            <span>Reply</span>
                           </button>
 
                           <button
@@ -269,23 +301,28 @@ export default function OutreachTab({
                             📜 Audit
                           </button>
 
-                          <button
-                            onClick={() => handleChangeStatus(o._id)}
-                            title="Update Status Manually"
-                            className="px-1.5 py-1 text-slate-400 hover:text-white rounded text-[11px]"
-                          >
-                            ⚙️
-                          </button>
-
                           {o.status !== 'CLOSED' && (
                             <button
-                              onClick={() => handleCloseOutreach(o._id)}
+                              onClick={() => handleCloseOutreach(o._id, compName)}
                               title="Close Outreach"
-                              className="px-1.5 py-1 text-slate-500 hover:text-red-400 rounded text-[11px]"
+                              className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-300 rounded border border-slate-700 text-[11px]"
                             >
-                              ✕
+                              ✕ Close
                             </button>
                           )}
+
+                          <button
+                            onClick={() => handleDeleteOutreach(o._id, compName)}
+                            title={canDeleteOutreach ? "Remove this outreach record from CRM (Outreach Coordinator Only)" : "Permission Denied: Only Outreach Coordinators can remove outreach CRM records"}
+                            className={`px-2 py-1 rounded border transition text-[11px] flex items-center space-x-1 ${
+                              canDeleteOutreach
+                                ? "bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 hover:border-red-800/60 border-slate-700"
+                                : "bg-slate-900 text-slate-600 border-slate-800 hover:text-amber-400 hover:border-amber-500/30 cursor-not-allowed"
+                            }`}
+                          >
+                            <span>{canDeleteOutreach ? "🗑️" : "🔒"}</span>
+                            <span>Remove</span>
+                          </button>
                         </div>
                       </td>
                     </tr>

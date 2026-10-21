@@ -498,13 +498,42 @@ const approveEmail = async (req, res) => {
       notes
     });
 
+    // Automatically deliver to company's email address from user's email and create Outreach CRM record
+    let deliveryResult = null;
+    if (req.body?.deliverNow !== false) {
+      const { deliverApprovedEmail } = require("../services/emailDeliveryService");
+      deliveryResult = await deliverApprovedEmail({
+        email: approvedEmail,
+        recipient: req.body?.to || null,
+        reviewerName,
+        mock: req.body?.mock === true || req.query?.mock === "true"
+      });
+    }
+
     serverCache.invalidateTag("emails");
+    serverCache.invalidateTag("outreach");
     serverCache.invalidateTag("stats");
+    serverCache.invalidateTag("threads");
 
     return res.status(200).json({
       success: true,
-      message: "Email approved successfully",
-      data: { email: approvedEmail, approvalLog: log }
+      message: deliveryResult
+        ? `Email approved and automatically delivered to ${deliveryResult.recipient}! Outreach CRM record created.`
+        : "Email approved successfully",
+      data: {
+        email: deliveryResult?.email || approvedEmail,
+        approvalLog: log,
+        delivery: deliveryResult?.sendResult || null,
+        recipient: deliveryResult?.recipient || null,
+        senderEmail: deliveryResult?.senderEmail || null,
+        outreach: deliveryResult?.outreach ? {
+          id: deliveryResult.outreach._id,
+          status: deliveryResult.outreach.status,
+          followUpCount: deliveryResult.outreach.followUpCount,
+          nextFollowUpAt: deliveryResult.outreach.nextFollowUpAt,
+          threadId: deliveryResult.outreach.threadId
+        } : null
+      }
     });
   } catch (error) {
     console.error("Error in approveEmail:", error);

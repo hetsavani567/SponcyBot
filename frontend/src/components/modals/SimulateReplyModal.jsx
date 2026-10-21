@@ -15,9 +15,10 @@ export default function SimulateReplyModal({
   const [classification, setClassification] = useState(null);
 
   const presets = {
-    INTERESTED: `Hi Team,\n\nThanks for reaching out! We are definitely interested in supporting the ACM Hackathon. Could you send over the Gold tier deliverables deck? Let's connect on a 15-minute call this Thursday.`,
+    INTERESTED: `Hi Team,\n\nThanks for reaching out! We are definitely interested in supporting your hackathon. Could you send over the sponsorship deliverables deck? Let's connect on a 15-minute call this Thursday.`,
     DECLINED: `Hello,\n\nThank you for thinking of us. Unfortunately our university sponsorship budget for this quarter is fully committed, so we will have to pass this year.`,
-    OTHER: `Hi,\n\nI am currently out of office on business travel until next Tuesday. Please follow up with me next week.`
+    OUT_OF_OFFICE: `Hi,\n\nI am currently out of office on business travel until next Tuesday with limited access to email. Please follow up with me next week.`,
+    'WAITING FOR REPLY': `Hi Team,\n\nCould you clarify the expected attendee demographic and technical workshop requirements? We are reviewing internally.`
   };
 
   const handleSelectOutcome = (outcome) => {
@@ -55,10 +56,14 @@ export default function SimulateReplyModal({
 
       if (res.ok && data?.data) {
         setClassification(data.data);
-        if (data.data.suggestedLabel && ['INTERESTED', 'DECLINED', 'OTHER'].includes(data.data.suggestedLabel)) {
-          setSelectedOutcome(data.data.suggestedLabel);
+        const suggested = data.data.suggestedLabel;
+        if (suggested) {
+          if (['INTERESTED', 'APPROVED'].includes(suggested)) setSelectedOutcome('INTERESTED');
+          else if (['DECLINED', 'DENIED'].includes(suggested)) setSelectedOutcome('DECLINED');
+          else if (['OUT_OF_OFFICE', 'OUT OF OFFICE', 'OTHER'].includes(suggested)) setSelectedOutcome('OUT_OF_OFFICE');
+          else setSelectedOutcome('WAITING FOR REPLY');
         }
-        onShowToast(`AI suggested label: ${data.data.suggestedLabel}`, 'info');
+        onShowToast(`AI suggested label: ${suggested}`, 'info');
       } else {
         onShowToast(data.message || 'Classification failed, using selected outcome', 'warning');
       }
@@ -124,7 +129,7 @@ export default function SimulateReplyModal({
             <label className="block text-slate-300 font-semibold mb-1.5">
               Select Sponsor Outcome / Status:
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => handleSelectOutcome('INTERESTED')}
@@ -134,8 +139,8 @@ export default function SimulateReplyModal({
                     : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
-                <div className="text-xs">✓ Interested</div>
-                <div className="text-[10px] text-emerald-400/80 font-normal mt-0.5">Ready for Call / Deck</div>
+                <div className="text-xs">✓ Approved</div>
+                <div className="text-[10px] text-emerald-400/80 font-normal mt-0.5">Interested / Meeting</div>
               </button>
 
               <button
@@ -147,21 +152,34 @@ export default function SimulateReplyModal({
                     : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
-                <div className="text-xs">✕ Declined</div>
-                <div className="text-[10px] text-red-400/80 font-normal mt-0.5">Budget Full / Pass</div>
+                <div className="text-xs">✕ Denied</div>
+                <div className="text-[10px] text-red-400/80 font-normal mt-0.5">Declined / Budget Full</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleSelectOutcome('OTHER')}
+                onClick={() => handleSelectOutcome('OUT_OF_OFFICE')}
                 className={`p-2.5 rounded-xl border text-left transition ${
-                  selectedOutcome === 'OTHER'
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500 font-bold shadow-sm'
+                  selectedOutcome === 'OUT_OF_OFFICE'
+                    ? 'bg-orange-500/20 text-orange-300 border-orange-500 font-bold shadow-sm'
                     : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
                 <div className="text-xs">⏳ Out of Office</div>
-                <div className="text-[10px] text-amber-400/80 font-normal mt-0.5">Follow up later</div>
+                <div className="text-[10px] text-orange-400/80 font-normal mt-0.5">Auto-Reply Reschedule</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectOutcome('WAITING FOR REPLY')}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  selectedOutcome === 'WAITING FOR REPLY'
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500 font-bold shadow-sm'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="text-xs">💬 General Reply</div>
+                <div className="text-[10px] text-indigo-400/80 font-normal mt-0.5">Inquiry / In Review</div>
               </button>
             </div>
           </div>
@@ -212,13 +230,23 @@ export default function SimulateReplyModal({
                 ? 'bg-emerald-600 hover:bg-emerald-500'
                 : selectedOutcome === 'DECLINED'
                 ? 'bg-red-600 hover:bg-red-500'
-                : 'bg-amber-600 hover:bg-amber-500'
+                : selectedOutcome === 'OUT_OF_OFFICE'
+                ? 'bg-orange-600 hover:bg-orange-500'
+                : 'bg-indigo-600 hover:bg-indigo-500'
             }`}
           >
             <span>
               {confirming
                 ? 'Updating Outreach Status...'
-                : `✓ Confirm Sponsor Reply as '${selectedOutcome}' & Update CRM`}
+                : `✓ Confirm Sponsor Reply as '${
+                    selectedOutcome === 'INTERESTED'
+                      ? 'Approved (Interested)'
+                      : selectedOutcome === 'DECLINED'
+                      ? 'Denied (Declined)'
+                      : selectedOutcome === 'OUT_OF_OFFICE'
+                      ? 'Out of Office'
+                      : 'Reply Received'
+                  }' & Update CRM`}
             </span>
           </button>
           <button

@@ -63,7 +63,7 @@ const signup = async (req, res) => {
  */
 const signin = async (req, res) => {
   try {
-    const { username, email, usernameOrEmail, password } = req.body || {};
+    const { username, email, usernameOrEmail, password, role } = req.body || {};
     const identifier = usernameOrEmail || username || email;
 
     if (!identifier || !String(identifier).trim()) {
@@ -82,7 +82,8 @@ const signin = async (req, res) => {
 
     const result = await authenticateUser({
       usernameOrEmail: identifier,
-      password
+      password,
+      role
     });
 
     return res.status(200).json({
