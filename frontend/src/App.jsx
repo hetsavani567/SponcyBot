@@ -313,8 +313,32 @@ export default function App() {
         onClose={hideToast}
       />
 
-      {/* Floating Run Demo Trigger (Bottom-Left Corner on All Pages) */}
-      <aside aria-label="Run Demo Action" className="fixed bottom-5 left-5 z-40">
+      {/* Floating Action Cluster (Bottom-Left Corner): Guide above Run Demo */}
+      <aside aria-label="Quick Actions" className="fixed bottom-5 left-5 z-40 flex flex-col items-start gap-2.5">
+        {/* Guide Trigger Button (Directly ABOVE Run Demo) */}
+        <button
+          type="button"
+          onClick={() => setTutorialOpen(true)}
+          title="Open Interactive Walkthrough & SponcyBot Guide"
+          aria-label="Open Interactive Guide"
+          className="group relative flex items-center space-x-2 px-3.5 py-2 rounded-full bg-slate-900/95 hover:bg-slate-800 text-slate-100 hover:text-white border border-slate-700/80 hover:border-emerald-400/80 shadow-xl shadow-black/40 backdrop-blur-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+              <path d="M6 6h10" />
+              <path d="M6 10h10" />
+            </svg>
+          </span>
+          <span className="text-xs font-bold tracking-tight text-white group-hover:text-emerald-300 transition-colors">
+            Guide
+          </span>
+          <span className="hidden sm:inline-block text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+            Tour
+          </span>
+        </button>
+
+        {/* Run Demo Simulation Trigger */}
         <button
           type="button"
           onClick={() => setDemoSimulationOpen(true)}
